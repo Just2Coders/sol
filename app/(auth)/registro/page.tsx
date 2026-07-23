@@ -5,6 +5,11 @@ import { SignupForm, type ZoneOption } from "@/components/auth/signup-form";
 
 export const metadata = { title: "Crear cuenta — Solaris" };
 
+// Las zonas se leen de la BD en cada request (son editables por el admin), así
+// que la página se renderiza dinámicamente. Además, esto evita que el build
+// requiera una base de datos viva para prerenderizar.
+export const dynamic = "force-dynamic";
+
 export default async function RegistroPage() {
   const states = await db.query.zones.findMany({
     where: isNull(zones.parentId),
