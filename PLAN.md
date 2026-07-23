@@ -6,11 +6,11 @@ Marketplace de paneles solares y kits de energía. Los proveedores se registran 
 
 | Capa | Elección | Notas |
 |---|---|---|
-| Framework | Next.js 15 (App Router, TypeScript) | Fullstack: UI + API routes / server actions |
+| Framework | Next.js 16 (App Router, TypeScript) | Fullstack: UI + Server Actions |
 | Estilos | Tailwind CSS + shadcn/ui | Componentes listos para admin y catálogo |
 | Base de datos | Neon (Postgres serverless) | Rama `dev` y `prod` separadas |
 | ORM | Drizzle ORM | Ligero, migraciones SQL claras (alternativa: Prisma) |
-| Auth | Auth.js (NextAuth v5) | Email/password + Google opcional |
+| Auth | Sesión JWT propia (`jose`) + `bcryptjs` | Email/password; cookie httpOnly. Ver `docs/ARCHITECTURE.md` §6 |
 | Imágenes | Vercel Blob | Fotos de productos y comprobantes de pago |
 | Emails | Resend | Confirmaciones de orden y pago |
 | Deploy | Vercel | Conectado al repo desde el día 1 |
@@ -56,21 +56,21 @@ Decisiones clave:
 
 ## Etapas de trabajo
 
-### Etapa 0 — Fundaciones (½ día)
-- [ ] `create-next-app` con TypeScript, Tailwind, App Router; instalar shadcn/ui.
+### Etapa 0 — Fundaciones (½ día) ✅
+- [x] `create-next-app` con TypeScript, Tailwind, App Router; instalar shadcn/ui.
 - [ ] Repo en GitHub + proyecto en Vercel conectado (deploy automático desde el inicio).
 - [ ] Crear proyecto en Neon con ramas `dev` y `prod`; variables de entorno en `.env.local` y Vercel.
-- [ ] Instalar Drizzle + `drizzle-kit`, configurar conexión y primera migración de prueba.
+- [x] Instalar Drizzle + `drizzle-kit`, configurar conexión y primera migración de prueba.
 
-### Etapa 1 — Esquema de datos (1 día)
-- [ ] Definir todas las tablas del modelo de arriba en Drizzle.
-- [ ] Migraciones aplicadas en Neon.
-- [ ] Script de seed: zonas iniciales (estados/ciudades donde vas a arrancar), un admin, un proveedor y productos de prueba.
+### Etapa 1 — Esquema de datos (1 día) ✅
+- [x] Definir todas las tablas del modelo de arriba en Drizzle.
+- [x] Migraciones aplicadas en Neon.
+- [x] Script de seed: zonas iniciales (estados/ciudades donde vas a arrancar), un admin, un proveedor y productos de prueba.
 
-### Etapa 2 — Autenticación (1 día)
-- [ ] Auth.js con credenciales (email + password) y sesión JWT.
-- [ ] Registro de clientes con selección de zona.
-- [ ] Middleware: `/admin/**` solo para rol `ADMIN`, `/cuenta/**` requiere sesión.
+### Etapa 2 — Autenticación (1 día) ✅
+- [x] Sesión JWT propia (`jose`) con credenciales (email + password) — no se usó Auth.js.
+- [x] Registro de clientes con selección de zona.
+- [x] Middleware (`proxy.ts`): `/admin/**` solo para rol `ADMIN`, `/cuenta/**` requiere sesión.
 - [ ] El catálogo es público; el login solo se exige al hacer checkout.
 
 ### Etapa 3 — Panel admin: proveedores y zonas (1–2 días)
