@@ -75,10 +75,11 @@ Decisiones clave:
       middleware solo protege `/admin` y `/cuenta`, y el flujo `?desde=` devuelve
       al usuario a la página de origen tras login o registro.
 
-### Etapa 3 — Panel admin: proveedores y zonas (1–2 días)
-- [ ] CRUD de zonas (jerarquía estado → ciudad).
-- [ ] CRUD de proveedores: datos de contacto, logo, notas, info de liquidación.
-- [ ] Asignación de zonas de cobertura a cada proveedor.
+### Etapa 3 — Panel admin: proveedores y zonas (1–2 días) ✅
+- [x] CRUD de zonas (jerarquía estado → ciudad).
+- [x] CRUD de proveedores: datos de contacto, logo (URL; subida a Blob en Etapa 4),
+      notas, info de liquidación.
+- [x] Asignación de zonas de cobertura a cada proveedor.
 
 ### Etapa 4 — Panel admin: productos y kits (2 días)
 - [ ] CRUD de productos por proveedor: precio, stock, specs, activar/desactivar.

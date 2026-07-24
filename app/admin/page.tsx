@@ -1,20 +1,48 @@
+import Link from "next/link";
 import { verifyAdmin } from "@/lib/dal";
-import { LogoutButton } from "@/components/auth/logout-button";
+import {
+  Card,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 
 export const metadata = { title: "Panel admin — Solaris" };
+
+const SECTIONS = [
+  {
+    href: "/admin/zonas",
+    title: "Zonas",
+    description: "Estados y ciudades donde opera la plataforma.",
+  },
+  {
+    href: "/admin/proveedores",
+    title: "Proveedores",
+    description: "Datos de contacto, liquidación y zonas de cobertura.",
+  },
+] as const;
 
 export default async function AdminPage() {
   await verifyAdmin();
 
   return (
-    <main className="mx-auto grid max-w-4xl gap-6 p-4 py-10">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">Panel de administración</h1>
-        <LogoutButton />
+    <div className="grid gap-6">
+      <h1 className="text-2xl font-semibold">Panel de administración</h1>
+      <div className="grid gap-4 sm:grid-cols-2">
+        {SECTIONS.map((s) => (
+          <Link key={s.href} href={s.href}>
+            <Card className="h-full transition-colors hover:bg-accent/50">
+              <CardHeader>
+                <CardTitle>{s.title}</CardTitle>
+                <CardDescription>{s.description}</CardDescription>
+              </CardHeader>
+            </Card>
+          </Link>
+        ))}
       </div>
-      <p className="text-muted-foreground">
-        Aquí irán proveedores, zonas, productos, kits y pagos (Etapas 3, 4 y 7).
+      <p className="text-sm text-muted-foreground">
+        Productos, kits y pagos llegan en las Etapas 4 y 7.
       </p>
-    </main>
+    </div>
   );
 }
