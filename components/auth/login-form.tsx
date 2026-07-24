@@ -15,7 +15,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 
-export function LoginForm() {
+export function LoginForm({ redirectTo }: { redirectTo?: string }) {
   const [state, action, pending] = useActionState(login, undefined);
 
   return (
@@ -25,6 +25,7 @@ export function LoginForm() {
         <CardDescription>Accede a tu cuenta de Solaris</CardDescription>
       </CardHeader>
       <form action={action}>
+        {redirectTo && <input type="hidden" name="redirectTo" value={redirectTo} />}
         <CardContent className="grid gap-4">
           <div className="grid gap-2">
             <Label htmlFor="email">Correo</Label>
@@ -48,7 +49,10 @@ export function LoginForm() {
           </Button>
           <p className="text-sm text-muted-foreground">
             ¿No tienes cuenta?{" "}
-            <Link href="/registro" className="underline underline-offset-4 hover:text-foreground">
+            <Link
+              href={redirectTo ? `/registro?desde=${encodeURIComponent(redirectTo)}` : "/registro"}
+              className="underline underline-offset-4 hover:text-foreground"
+            >
               Regístrate
             </Link>
           </p>

@@ -30,7 +30,13 @@ export type ZoneOption = {
   cities: { id: string; name: string }[];
 };
 
-export function SignupForm({ zoneTree }: { zoneTree: ZoneOption[] }) {
+export function SignupForm({
+  zoneTree,
+  redirectTo,
+}: {
+  zoneTree: ZoneOption[];
+  redirectTo?: string;
+}) {
   const [state, action, pending] = useActionState(register, undefined);
 
   return (
@@ -42,6 +48,7 @@ export function SignupForm({ zoneTree }: { zoneTree: ZoneOption[] }) {
         </CardDescription>
       </CardHeader>
       <form action={action}>
+        {redirectTo && <input type="hidden" name="redirectTo" value={redirectTo} />}
         <CardContent className="grid gap-4">
           <div className="grid gap-2">
             <Label htmlFor="name">Nombre</Label>
@@ -99,7 +106,10 @@ export function SignupForm({ zoneTree }: { zoneTree: ZoneOption[] }) {
           </Button>
           <p className="text-sm text-muted-foreground">
             ¿Ya tienes cuenta?{" "}
-            <Link href="/login" className="underline underline-offset-4 hover:text-foreground">
+            <Link
+              href={redirectTo ? `/login?desde=${encodeURIComponent(redirectTo)}` : "/login"}
+              className="underline underline-offset-4 hover:text-foreground"
+            >
               Inicia sesión
             </Link>
           </p>

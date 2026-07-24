@@ -7,6 +7,7 @@ import * as z from "zod";
 import { db } from "@/lib/db";
 import { users } from "@/lib/db/schema";
 import { createSession, deleteSession, getSession } from "@/lib/session";
+import { safeInternalPath } from "@/lib/utils";
 
 export type AuthFormState =
   | {
@@ -84,7 +85,7 @@ export async function register(
   }
 
   await createSession({ userId: user.id, role: user.role });
-  redirect("/");
+  redirect(safeInternalPath(formData.get("redirectTo")) ?? "/");
 }
 
 export async function login(
@@ -110,7 +111,8 @@ export async function login(
   }
 
   await createSession({ userId: user.id, role: user.role });
-  redirect(user.role === "ADMIN" ? "/admin" : "/");
+  const redirectTo = safeInternalPath(formData.get("redirectTo"));
+  redirect(redirectTo ?? (user.role === "ADMIN" ? "/admin" : "/"));
 }
 
 export async function logout() {
