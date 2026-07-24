@@ -27,20 +27,23 @@
 app/                    Presentación: rutas, páginas (RSC) y Server Actions
   (auth)/               Grupo de rutas de autenticación (login, registro)
   actions/              Server Actions ("use server") — punto de entrada de mutaciones
-  admin/                Panel de administración (rol ADMIN)
+  admin/                Panel de administración (rol ADMIN): zonas, proveedores
   cuenta/               Área del cliente autenticado
 components/
   ui/                   Primitivos de shadcn/ui (button, input, card, ...)
   auth/                 Componentes de cliente por feature (formularios de auth)
+  admin/                Componentes de cliente del panel admin (formularios CRUD)
 lib/                    Lógica de servidor reutilizable (NO específica de una ruta)
   db/
     schema.ts           Definición de tablas y relaciones Drizzle (fuente del modelo)
     index.ts            Cliente `db` (Neon + Drizzle)
     seed.ts             Datos iniciales (zonas, admin, proveedor demo)
     migrations/         SQL generado por drizzle-kit (versionado en git)
+  zones/queries.ts      Lecturas de zonas (jerarquía estado → ciudad)
+  suppliers/queries.ts  Lecturas de proveedores (con zonas de cobertura)
   session.ts            Emisión/lectura/borrado de la cookie de sesión JWT
   dal.ts                Data Access Layer: verificación de sesión + lectura de usuario
-  utils.ts              Helpers de UI (cn, etc.)
+  utils.ts              Helpers compartidos (cn, slugify, safeInternalPath)
 proxy.ts                Middleware de Next 16 (protección de rutas por cookie)
 docs/                   Documentación (este archivo)
 ```
