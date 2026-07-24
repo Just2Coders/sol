@@ -40,3 +40,9 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# exploraciones de diseño (locales, no van a commits)
+/design-explorations
+
+# estado local de impeccable (cache y excepciones locales)
+/.impeccable
