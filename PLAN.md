@@ -71,7 +71,9 @@ Decisiones clave:
 - [x] Sesión JWT propia (`jose`) con credenciales (email + password) — no se usó Auth.js.
 - [x] Registro de clientes con selección de zona.
 - [x] Middleware (`proxy.ts`): `/admin/**` solo para rol `ADMIN`, `/cuenta/**` requiere sesión.
-- [ ] El catálogo es público; el login solo se exige al hacer checkout.
+- [x] El catálogo es público; el login solo se exige al hacer checkout: el
+      middleware solo protege `/admin` y `/cuenta`, y el flujo `?desde=` devuelve
+      al usuario a la página de origen tras login o registro.
 
 ### Etapa 3 — Panel admin: proveedores y zonas (1–2 días)
 - [ ] CRUD de zonas (jerarquía estado → ciudad).

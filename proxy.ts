@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { decrypt } from "@/lib/session";
+import { safeInternalPath } from "@/lib/utils";
 
 // Chequeo optimista con la cookie (sin BD). La verificación real vive en el
 // DAL (lib/dal.ts), que cada página protegida llama de nuevo.
@@ -22,7 +23,8 @@ export default async function proxy(req: NextRequest) {
   }
 
   if (isAuthRoute && session) {
-    return NextResponse.redirect(new URL("/", req.nextUrl));
+    const desde = safeInternalPath(req.nextUrl.searchParams.get("desde"));
+    return NextResponse.redirect(new URL(desde ?? "/", req.nextUrl));
   }
 
   return NextResponse.next();

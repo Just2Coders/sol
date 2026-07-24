@@ -2,6 +2,7 @@ import { isNull } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { zones } from "@/lib/db/schema";
 import { SignupForm, type ZoneOption } from "@/components/auth/signup-form";
+import { safeInternalPath } from "@/lib/utils";
 
 export const metadata = { title: "Crear cuenta — Solaris" };
 
@@ -10,7 +11,12 @@ export const metadata = { title: "Crear cuenta — Solaris" };
 // requiera una base de datos viva para prerenderizar.
 export const dynamic = "force-dynamic";
 
-export default async function RegistroPage() {
+export default async function RegistroPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ desde?: string }>;
+}) {
+  const redirectTo = safeInternalPath((await searchParams).desde) ?? undefined;
   const states = await db.query.zones.findMany({
     where: isNull(zones.parentId),
     with: { children: true },
@@ -27,7 +33,7 @@ export default async function RegistroPage() {
 
   return (
     <main className="flex min-h-screen items-center justify-center p-4">
-      <SignupForm zoneTree={zoneTree} />
+      <SignupForm zoneTree={zoneTree} redirectTo={redirectTo} />
     </main>
   );
 }
