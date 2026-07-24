@@ -12,6 +12,11 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Tooling de agentes (skills instaladas y worktrees de Claude Code) — no
+    // es código de la app y no debe lintarse.
+    ".agents/**",
+    ".claude/**",
+    ".github/skills/**",
   ]),
 ]);
 
