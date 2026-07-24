@@ -133,7 +133,11 @@ verifica el Zelle manualmente y confirma, lo que hace avanzar la orden.
   - `verifySession()` / `verifyAdmin()` — chequeo **optimista** (solo cookie),
     para gate rápido de páginas. Redirige si no cumple.
   - `getCurrentUser()` — chequeo **seguro** (va a la BD), cuando se necesitan
-    datos reales del usuario. Nunca devuelve `passwordHash`.
+    datos reales del usuario. Nunca devuelve `passwordHash`. Si la cookie es
+    válida pero el usuario ya no existe (sesión huérfana, p. ej. cuenta
+    eliminada), redirige a `/api/auth/logout` — un Route Handler que borra la
+    cookie y manda a `/login` (un RSC no puede borrar cookies; solo Server
+    Actions y Route Handlers).
 - **`proxy.ts`** (middleware de Next 16) hace un primer filtro por cookie para
   `/admin` y `/cuenta`, pero **no** es la última línea de defensa: cada página
   protegida vuelve a llamar al DAL. Nunca confíes solo en el middleware.

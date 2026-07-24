@@ -135,8 +135,13 @@ export async function changePassword(
     return { errors: z.flattenError(parsed.error).fieldErrors };
   }
 
+  // Sesión huérfana (usuario eliminado): aquí sí podemos borrar la cookie
+  // directamente por ser una Server Action.
   const user = await db.query.users.findFirst({ where: eq(users.id, session.userId) });
-  if (!user) redirect("/login");
+  if (!user) {
+    await deleteSession();
+    redirect("/login");
+  }
 
   const valid = await bcrypt.compare(parsed.data.currentPassword, user.passwordHash);
   if (!valid) {
