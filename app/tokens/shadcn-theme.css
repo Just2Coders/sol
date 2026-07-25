@@ -1,0 +1,112 @@
+/* Mapeo semántico → contrato shadcn/ui, formato Tailwind v4 (@theme inline).
+   Solo modo claro. Nunca edites los valores aquí: cambia el rol en colors.css. */
+:root{
+  --background:var(--crema);
+  --foreground:var(--tinta);
+  --card:var(--hueso);
+  --card-foreground:var(--tinta);
+  --popover:var(--hueso);
+  --popover-foreground:var(--tinta);
+  --primary:var(--terra);
+  --primary-foreground:var(--hueso);
+  --secondary:var(--madera);
+  --secondary-foreground:var(--tinta);
+  --muted:var(--arena);
+  --muted-foreground:var(--tinta-suave);
+  --accent:var(--verde-claro);
+  --accent-foreground:var(--verde);
+  --destructive:var(--error);
+  --destructive-foreground:var(--hueso);
+  --border:var(--borde);
+  --input:var(--borde-fuerte);
+  --ring:var(--ocre);
+  --radius:4px;
+
+  --chart-1:var(--terra); --chart-2:var(--verde); --chart-3:var(--ocre);
+  --chart-4:var(--salvia-oscuro); --chart-5:var(--madera);
+
+  /* el "tapete verde" es una superficie legítima para sidebar/nav grandes —
+     no para chrome pequeño (bordes, chips) */
+  --sidebar:var(--verde);
+  --sidebar-foreground:var(--hueso);
+  --sidebar-primary:var(--terra);
+  --sidebar-primary-foreground:var(--hueso);
+  --sidebar-accent:rgba(250,246,236,.08);
+  --sidebar-accent-foreground:var(--hueso);
+  --sidebar-border:rgba(250,246,236,.14);
+  --sidebar-ring:var(--ocre);
+}
+@theme inline{
+  --color-background:var(--background);
+  --color-foreground:var(--foreground);
+  --color-card:var(--card);
+  --color-card-foreground:var(--card-foreground);
+  --color-popover:var(--popover);
+  --color-popover-foreground:var(--popover-foreground);
+  --color-primary:var(--primary);
+  --color-primary-foreground:var(--primary-foreground);
+  --color-secondary:var(--secondary);
+  --color-secondary-foreground:var(--secondary-foreground);
+  --color-muted:var(--muted);
+  --color-muted-foreground:var(--muted-foreground);
+  --color-accent:var(--accent);
+  --color-accent-foreground:var(--accent-foreground);
+  --color-destructive:var(--destructive);
+  --color-destructive-foreground:var(--destructive-foreground);
+  --color-border:var(--border);
+  --color-input:var(--input);
+  --color-ring:var(--ring);
+  --color-chart-1:var(--chart-1);
+  --color-chart-2:var(--chart-2);
+  --color-chart-3:var(--chart-3);
+  --color-chart-4:var(--chart-4);
+  --color-chart-5:var(--chart-5);
+  --color-sidebar:var(--sidebar);
+  --color-sidebar-foreground:var(--sidebar-foreground);
+  --color-sidebar-primary:var(--sidebar-primary);
+  --color-sidebar-primary-foreground:var(--sidebar-primary-foreground);
+  --color-sidebar-accent:var(--sidebar-accent);
+  --color-sidebar-accent-foreground:var(--sidebar-accent-foreground);
+  --color-sidebar-border:var(--sidebar-border);
+  --color-sidebar-ring:var(--sidebar-ring);
+
+  /* superficies y roles propios de Solaris, para usarlos como utilidades
+     (bg-verde, text-ocre, bg-success…) sin escribir colores a mano */
+  --color-hueso:var(--hueso);
+  --color-crema:var(--crema);
+  --color-arena:var(--arena);
+  --color-salvia:var(--salvia);
+  --color-salvia-oscuro:var(--salvia-oscuro);
+  --color-verde:var(--verde);
+  --color-verde-claro:var(--verde-claro);
+  --color-madera:var(--madera);
+  --color-ocre:var(--ocre);
+  --color-terra:var(--terra);
+  --color-terra-hover:var(--terra-hover);
+  --color-tinta:var(--tinta);
+  --color-tinta-suave:var(--tinta-suave);
+
+  --color-success:var(--exito);
+  --color-success-bg:var(--exito-bg);
+  --color-success-border:var(--exito-borde);
+  --color-warning:var(--aviso);
+  --color-warning-bg:var(--aviso-bg);
+  --color-warning-border:var(--aviso-borde);
+  --color-info:var(--info);
+  --color-info-bg:var(--info-bg);
+  --color-info-border:var(--info-borde);
+
+  --font-sans:var(--font-display);
+  --font-heading:var(--font-display);
+  --font-mono:var(--font-space-mono),monospace;
+
+  /* Escala de radios. El botón del sistema usa var(--radius) = 4px, así que
+     los pasos bajos se mantienen pequeños; los altos quedan para píldoras. */
+  --radius-sm:2px;
+  --radius-md:var(--radius);
+  --radius-lg:calc(var(--radius) + 6px);
+  --radius-xl:calc(var(--radius) + 12px);
+  --radius-2xl:16px;
+  --radius-3xl:24px;
+  --radius-4xl:999px;
+}
