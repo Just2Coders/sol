@@ -1,0 +1,9 @@
+:root{
+  --radius:4px; /* base tomada del botón fuente — no redondear a 8px por defecto */
+  --radius-xs:2px;
+  --radius-sm:4px;
+  --radius-md:6px;
+  --radius-lg:10px;
+  --radius-xl:16px;
+  --radius-full:999px;
+}

@@ -1,0 +1,9 @@
+:root{
+  --bp-sm:480px;
+  --bp-md:760px;  /* breakpoint del sketch fuente */
+  --bp-lg:1024px;
+  --bp-xl:1280px;
+  --bp-2xl:1536px;
+  --z-base:0; /* @kind other */ --z-dropdown:20; /* @kind other */ --z-sticky:30; /* @kind other */ --z-header:40; /* @kind other */
+  --z-overlay:50; /* @kind other */ --z-modal:60; /* @kind other */ --z-toast:70; /* @kind other */ --z-tooltip:80; /* @kind other */
+}

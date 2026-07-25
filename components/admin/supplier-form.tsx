@@ -174,7 +174,7 @@ export function SupplierForm({
         <CardFooter className="flex-col items-start gap-2">
           {state?.message && <p className="text-sm text-destructive">{state.message}</p>}
           {state?.success && (
-            <p className="text-sm text-green-600">Cambios guardados.</p>
+            <p className="text-success text-sm">Cambios guardados.</p>
           )}
           <Button type="submit" disabled={pending}>
             {pending
