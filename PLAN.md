@@ -82,10 +82,12 @@ Decisiones clave:
 - [x] Asignación de zonas de cobertura a cada proveedor.
 
 ### Etapa 4 — Panel admin: productos y kits (2 días)
-- [ ] CRUD de productos por proveedor: precio, stock, specs, activar/desactivar.
+- [x] CRUD de productos por proveedor: precio, stock, specs, activar/desactivar.
 - [ ] Subida de imágenes a Vercel Blob (múltiples fotos por producto).
-- [ ] CRUD de kits: seleccionar productos del proveedor + cantidades, precio propio del kit.
-- [ ] Validación: un kit solo puede contener productos de su mismo proveedor.
+      *De momento se registran por URL (una por línea), igual que el logo del
+      proveedor. La subida de archivos queda para su propio PR.*
+- [x] CRUD de kits: seleccionar productos del proveedor + cantidades, precio propio del kit.
+- [x] Validación: un kit solo puede contener productos de su mismo proveedor.
 
 ### Etapa 5 — Catálogo público (2–3 días)
 - [ ] Landing con propuesta de valor y selector de zona (persistido en cookie).
