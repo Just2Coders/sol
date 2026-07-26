@@ -24,6 +24,16 @@ export async function getSuppliersWithZones(): Promise<SupplierWithZones[]> {
   }));
 }
 
+export type SupplierOption = { id: string; name: string; active: boolean };
+
+// Proveedores reducidos a {id, name} para los selects de productos y kits.
+export async function getSupplierOptions(): Promise<SupplierOption[]> {
+  return db.query.suppliers.findMany({
+    columns: { id: true, name: true, active: true },
+    orderBy: (s, { asc }) => [asc(s.name)],
+  });
+}
+
 export async function getSupplierWithZones(
   id: string,
 ): Promise<SupplierWithZones | null> {

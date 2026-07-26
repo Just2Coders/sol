@@ -20,6 +20,16 @@ const SECTIONS = [
     title: "Proveedores",
     description: "Datos de contacto, liquidación y zonas de cobertura.",
   },
+  {
+    href: "/admin/productos",
+    title: "Productos",
+    description: "Paneles, inversores y baterías: precio, stock y ficha técnica.",
+  },
+  {
+    href: "/admin/kits",
+    title: "Kits",
+    description: "Combos de productos de un proveedor, con precio propio.",
+  },
 ] as const;
 
 export default async function AdminPage() {
@@ -41,7 +51,7 @@ export default async function AdminPage() {
         ))}
       </div>
       <p className="text-sm text-muted-foreground">
-        Productos, kits y pagos llegan en las Etapas 4 y 7.
+        El catálogo público y los pagos llegan en las Etapas 5 y 7.
       </p>
     </div>
   );
