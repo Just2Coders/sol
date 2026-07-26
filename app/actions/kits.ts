@@ -7,11 +7,12 @@ import * as z from "zod";
 import { db } from "@/lib/db";
 import { kitItems, kits, products, suppliers } from "@/lib/db/schema";
 import { verifyAdmin } from "@/lib/dal";
+import { deleteBlobs, removedImages } from "@/lib/blob";
 import {
   idSchema,
   imageUrlsSchema,
   optionalText,
-  parseLines,
+  parseValues,
   priceUsdSchema,
   quantitySchema,
   type ActionState,
@@ -48,7 +49,7 @@ function parseKitForm(formData: FormData) {
     name: formData.get("name"),
     description: formData.get("description"),
     priceUsd: formData.get("priceUsd"),
-    images: parseLines(formData.get("images")),
+    images: parseValues(formData.getAll("images")),
     active: formData.get("active") === "on",
     items: productIds.map((productId) => ({
       productId,
@@ -159,12 +160,17 @@ export async function updateKit(
   const itemsError = await assertItemsBelongToSupplier(items, data.supplierId);
   if (itemsError) return { message: itemsError };
 
+  const current = await db.query.kits.findFirst({ where: eq(kits.id, id.data) });
+  if (!current) return { message: "El kit ya no existe." };
+
   const [updated] = await db
     .update(kits)
     .set({ ...data, slug })
     .where(eq(kits.id, id.data))
     .returning({ id: kits.id });
   if (!updated) return { message: "El kit ya no existe." };
+
+  await deleteBlobs(removedImages(current.images, data.images));
 
   // Reemplaza la composición completa: borrar + insertar en un batch atómico.
   await db.batch([
@@ -185,8 +191,11 @@ export async function deleteKit(
   const id = idSchema.safeParse(formData.get("id"));
   if (!id.success) return { message: "Kit inválido." };
 
+  const kit = await db.query.kits.findFirst({ where: eq(kits.id, id.data) });
+
   // `kit_items` cae en cascada. Las órdenes guardan snapshot, no referencia viva.
   await db.delete(kits).where(eq(kits.id, id.data));
+  await deleteBlobs(kit?.images ?? []);
 
   revalidateKits();
   redirect("/admin/kits");

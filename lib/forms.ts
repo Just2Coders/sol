@@ -63,7 +63,16 @@ export function parseLines(value: FormDataEntryValue | null): string[] {
   return [...new Set(lines)];
 }
 
-/** Galería de imágenes: una URL por línea. */
+/** Campos repetidos (`formData.getAll`) → array limpio y sin duplicados. */
+export function parseValues(values: FormDataEntryValue[]): string[] {
+  const entries = values
+    .filter((value): value is string => typeof value === "string")
+    .map((value) => value.trim())
+    .filter(Boolean);
+  return [...new Set(entries)];
+}
+
+/** Galería de imágenes: una URL por elemento. */
 export const imageUrlsSchema = z
   .array(z.url({ error: "Cada imagen debe ser una URL válida (https://...)." }))
   .max(10, { error: "Máximo 10 imágenes." });

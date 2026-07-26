@@ -9,6 +9,13 @@ const nextConfig: NextConfig = {
     // `components/ui` (select, sheet, dialog…).
     optimizePackageImports: ["reicon-react", "radix-ui"],
   },
+  images: {
+    remotePatterns: [
+      // Imágenes de productos y kits subidas a Vercel Blob. El subdominio
+      // depende del store, de ahí el comodín.
+      { protocol: "https", hostname: "*.public.blob.vercel-storage.com" },
+    ],
+  },
 };
 
 export default nextConfig;
