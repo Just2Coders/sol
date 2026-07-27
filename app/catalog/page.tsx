@@ -1,9 +1,12 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { Suspense } from "react";
+import { ArrowLeft, ArrowRight } from "reicon-react";
 
 import { browseWholeCountry } from "@/app/actions/preferences";
 import { CatalogCard } from "@/components/catalog/catalog-card";
 import { CatalogFilters } from "@/components/catalog/catalog-filters";
+import { CatalogSkeleton } from "@/components/catalog/catalog-skeleton";
 import { Button } from "@/components/ui/button";
 import {
   catalogHref,
@@ -30,8 +33,10 @@ export const metadata: Metadata = {
   },
 };
 
-// Precios, stock y altas de proveedores cambian a diario: nada que cachear.
-export const dynamic = "force-dynamic";
+// Sin `force-dynamic`: la página ya es dinámica por sí sola (lee la cookie de
+// zona y los query params). Declararlo además apagaba el caché de *todo* lo que
+// cuelga de la ruta, incluido el árbol de provincias, que no cambia nunca y
+// ahora se sirve cacheado por etiqueta desde `lib/zones/queries.ts`.
 
 export default async function CatalogPage({
   searchParams,
@@ -41,11 +46,6 @@ export default async function CatalogPage({
   const params = await searchParams;
   // Sin zona en la URL manda la que el visitante eligió antes (cookie).
   const filters = parseCatalogFilters(params, await getZonePreference());
-
-  const [catalog, zones] = await Promise.all([
-    getCatalog(filters),
-    getZoneFilterOptions(),
-  ]);
 
   return (
     // El scroll vive aquí dentro, no en el documento: el header queda arriba
@@ -58,6 +58,28 @@ export default async function CatalogPage({
         <h1 className="text-foreground text-display-1">Catálogo</h1>
       </section>
 
+      {/* El título no espera a la base de datos: sale con el primer byte y el
+          cuerpo entra en streaming detrás.
+
+          Sin `key`: si la frontera se remontara en cada cambio de filtro se
+          vería el esqueleto en vez de la grilla vieja, y lo que se quiere es lo
+          contrario — la transición del cliente mantiene los resultados
+          anteriores hasta que llegan los nuevos. */}
+      <Suspense fallback={<CatalogSkeleton />}>
+        <CatalogBody filters={filters} />
+      </Suspense>
+    </main>
+  );
+}
+
+async function CatalogBody({ filters }: { filters: Filters }) {
+  const [catalog, zones] = await Promise.all([
+    getCatalog(filters),
+    getZoneFilterOptions(),
+  ]);
+
+  return (
+    <>
       <CatalogFilters
         filters={filters}
         zones={zones}
@@ -70,22 +92,101 @@ export default async function CatalogPage({
           <EmptyState filters={filters} catalog={catalog} />
         </section>
       ) : (
-        // A sangre y sin gap: la retícula se dibuja sola con el fondo de línea
-        // asomando entre celdas (gap-px sobre bg-border), como una tabla.
-        <ul className="bg-border grid grid-cols-1 gap-px sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {catalog.items.map((item) => (
-            <CatalogCard key={`${item.type}-${item.id}`} item={item} />
-          ))}
-        </ul>
+        <>
+          {/* A sangre y sin gap: la retícula se dibuja sola con el fondo de
+              línea asomando entre celdas (gap-px sobre bg-border), como una
+              tabla. */}
+          <ul className="bg-border grid grid-cols-1 gap-px sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            {catalog.items.map((item) => (
+              <CatalogCard key={`${item.type}-${item.id}`} item={item} />
+            ))}
+          </ul>
+
+          <Pagination filters={filters} catalog={catalog} />
+        </>
       )}
-    </main>
+    </>
+  );
+}
+
+/**
+ * Las páginas son enlaces, no botones: el corte lo hace la query (`LIMIT`), así
+ * que cada página es una URL de verdad — se comparte, se indexa y el botón
+ * atrás funciona, igual que el resto de filtros.
+ */
+function Pagination({
+  filters,
+  catalog,
+}: {
+  filters: Filters;
+  catalog: CatalogResult;
+}) {
+  if (catalog.pageCount <= 1) return null;
+
+  const previous = catalog.page > 1 ? catalog.page - 1 : null;
+  const next = catalog.page < catalog.pageCount ? catalog.page + 1 : null;
+
+  return (
+    <nav
+      aria-label="Paginación del catálogo"
+      className="border-border px-gutter flex items-center justify-between gap-4 border-t py-8"
+    >
+      <p className="text-muted-foreground text-marginalia font-mono">
+        página {catalog.page} de {catalog.pageCount}
+      </p>
+
+      <div className="flex items-center gap-2">
+        <PageLink page={previous} filters={filters} rel="prev">
+          <ArrowLeft aria-hidden />
+          Anterior
+        </PageLink>
+
+        <PageLink page={next} filters={filters} rel="next">
+          Siguiente
+          <ArrowRight aria-hidden />
+        </PageLink>
+      </div>
+    </nav>
+  );
+}
+
+/**
+ * En el extremo del listado se dibuja un `<button disabled>` de verdad, no un
+ * enlace apagado: es lo único que apaga el puntero y baja la opacidad por sí
+ * solo, y deja el hueco ocupado para que la fila no salte al llegar al final.
+ */
+function PageLink({
+  page,
+  filters,
+  rel,
+  children,
+}: {
+  page: number | null;
+  filters: Filters;
+  rel: "prev" | "next";
+  children: React.ReactNode;
+}) {
+  if (page === null) {
+    return (
+      <Button variant="outline" disabled>
+        {children}
+      </Button>
+    );
+  }
+
+  return (
+    <Button asChild variant="outline">
+      <Link href={catalogHref({ ...filters, page })} rel={rel}>
+        {children}
+      </Link>
+    </Button>
   );
 }
 
 /**
  * El vacío no es uno solo, y cada uno tiene su salida: una provincia que no
- * existe, una sin proveedores todavía, unos filtros demasiado estrechos o un
- * catálogo que aún nadie ha publicado.
+ * existe, una sin proveedores todavía, unos filtros demasiado estrechos, una
+ * página fuera de rango o un catálogo que aún nadie ha publicado.
  */
 function EmptyState({
   filters,
@@ -124,6 +225,23 @@ function EmptyState({
     );
   }
 
+  // Hay resultados, pero no en esta página: el enlace se ha quedado viejo o
+  // alguien ha escrito el número a mano.
+  if (catalog.page > catalog.pageCount) {
+    return (
+      <Message
+        title="Esa página ya no existe."
+        body="Quedan menos resultados que cuando se guardó el enlace. Vuelve al principio del listado."
+      >
+        <Button asChild variant="outline" size="lg">
+          <Link href={catalogHref({ ...filters, page: 1 })}>
+            Volver a la primera página
+          </Link>
+        </Button>
+      </Message>
+    );
+  }
+
   if (!hasNarrowingFilters(filters) && catalog.counts.all === 0) {
     return (
       <Message
@@ -148,6 +266,7 @@ function EmptyState({
               minUsd: null,
               maxUsd: null,
               sort: "suggested",
+              page: 1,
             })}
           >
             Limpiar filtros

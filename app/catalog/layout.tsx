@@ -10,18 +10,27 @@ import { getSession } from "@/lib/session";
  *
  * Cada página de aquí abajo se encarga de su propio scroll: la que no declare
  * un contenedor con overflow se quedaría cortada.
+ *
+ * El layout es **síncrono a propósito**. Un `await` aquí arriba no retrasa solo
+ * al header: los componentes de servidor se renderizan en orden, así que
+ * mientras el layout espera, la página de abajo ni siquiera ha empezado a pedir
+ * el catálogo. La sesión —que es lo único que se esperaba— la pide el header
+ * por su cuenta, y las dos lecturas salen a la vez.
  */
-export default async function CatalogLayout({
+export default function CatalogLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  const session = await getSession();
-
   return (
     <div className="flex h-svh flex-col overflow-hidden">
-      <SiteHeader session={session} floating={false} />
+      <CatalogHeader />
       {children}
     </div>
   );
+}
+
+async function CatalogHeader() {
+  const session = await getSession();
+  return <SiteHeader session={session} floating={false} />;
 }

@@ -20,6 +20,13 @@ export type CatalogSort = (typeof CATALOG_SORTS)[number];
 /** Orden por defecto: primero los kits (es lo que se compra), luego precio. */
 export const DEFAULT_SORT: CatalogSort = "suggested";
 
+/**
+ * Cuántas celdas trae una página. El corte es de la query (`LIMIT`/`OFFSET`),
+ * no del render: sin él una provincia con mil equipos mandaría las mil filas a
+ * Node y las mil tarjetas al HTML.
+ */
+export const CATALOG_PAGE_SIZE = 48;
+
 export type CatalogFilters = {
   /** Slug de la zona; `null` = toda la isla. */
   zone: string | null;
@@ -30,6 +37,8 @@ export type CatalogFilters = {
   minUsd: number | null;
   maxUsd: number | null;
   sort: CatalogSort;
+  /** Página 1-based. Cambiar cualquier otro filtro la devuelve a 1. */
+  page: number;
 };
 
 export const EMPTY_FILTERS: CatalogFilters = {
@@ -39,6 +48,7 @@ export const EMPTY_FILTERS: CatalogFilters = {
   minUsd: null,
   maxUsd: null,
   sort: DEFAULT_SORT,
+  page: 1,
 };
 
 // Un valor de la URL nunca es de fiar: cada campo se valida y, si no cuadra,
@@ -50,6 +60,11 @@ const moneySchema = z
   .string()
   .transform((value) => Number(value))
   .refine((n) => Number.isFinite(n) && n >= 0 && n <= 1_000_000);
+// El tope evita que `?page=99999999` se traduzca en un OFFSET absurdo.
+const pageSchema = z
+  .string()
+  .transform((value) => Number(value))
+  .refine((n) => Number.isInteger(n) && n >= 1 && n <= 10_000);
 
 export type RawSearchParams = Record<string, string | string[] | undefined>;
 
@@ -82,6 +97,7 @@ export function parseCatalogFilters(
     minUsd: parse(moneySchema, one(params.min)),
     maxUsd: parse(moneySchema, one(params.max)),
     sort: parse(sortSchema, one(params.sort)) ?? DEFAULT_SORT,
+    page: parse(pageSchema, one(params.page)) ?? 1,
   };
 }
 
@@ -94,6 +110,7 @@ export function catalogSearchParams(filters: CatalogFilters): URLSearchParams {
   if (filters.minUsd !== null) params.set("min", String(filters.minUsd));
   if (filters.maxUsd !== null) params.set("max", String(filters.maxUsd));
   if (filters.sort !== DEFAULT_SORT) params.set("sort", filters.sort);
+  if (filters.page > 1) params.set("page", String(filters.page));
   return params;
 }
 

@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
+import { Sort } from "reicon-react";
 
 import { selectZone } from "@/app/actions/preferences";
 import { Button } from "@/components/ui/button";
@@ -69,7 +70,10 @@ export function useFilterActions(filters: CatalogFilters) {
   const [pending, startTransition] = useTransition();
 
   function apply(patch: Partial<CatalogFilters>) {
-    const next = { ...filters, ...patch };
+    // Cambiar un filtro devuelve el listado a la primera página: quedarse en la
+    // 7 tras estrechar el precio deja al visitante mirando un vacío que no
+    // entiende. Solo la propia paginación pasa un `page` explícito.
+    const next = { ...filters, page: 1, ...patch };
 
     // La cookie se escribe **antes** de navegar: si fueran en paralelo, el
     // render de la URL nueva podría leer todavía la zona vieja.
@@ -186,11 +190,18 @@ export function TypeSwitch({
 }
 
 /**
- * Select con la dimensión escrita dentro ("provincia · Toda la isla"): cuesta
+ * Select con su dimensión escrita dentro ("provincia · Toda la isla"): cuesta
  * los mismos píxeles de alto que el control y ahorra la fila de etiquetas.
+ *
+ * Con `icon` esa dimensión la dice el icono en vez de la palabra. Sirve cuando
+ * el control tiene un glifo que se lee de un vistazo —ordenar lo tiene— y la
+ * palabra suelta delante del valor se leía como parte de la frase. El `label`
+ * no desaparece: sigue siendo el nombre accesible del control, que ahora es lo
+ * único que lo nombra.
  */
 function InlineSelect({
   label,
+  icon: Icon,
   value,
   onValueChange,
   className,
@@ -198,6 +209,7 @@ function InlineSelect({
   children,
 }: {
   label: string;
+  icon?: React.ComponentType<{ className?: string; "aria-hidden"?: boolean }>;
   value: string;
   onValueChange: (value: string) => void;
   className?: string;
@@ -212,9 +224,13 @@ function InlineSelect({
         className={cn(CONTROL_SHAPE, className)}
       >
         <span className="flex items-center gap-2 overflow-hidden">
-          <span className="text-muted-foreground text-data font-mono">
-            {label}
-          </span>
+          {Icon ? (
+            <Icon aria-hidden className="text-muted-foreground size-4" />
+          ) : (
+            <span className="text-muted-foreground text-data font-mono">
+              {label}
+            </span>
+          )}
           <SelectValue />
         </span>
       </SelectTrigger>
@@ -364,7 +380,8 @@ export function SortSelect({
   if (inline) {
     return (
       <InlineSelect
-        label="orden"
+        label="Orden"
+        icon={Sort}
         value={value}
         onValueChange={handle}
         className={className}
@@ -421,7 +438,14 @@ export function PriceRange({
         event.preventDefault();
         commit();
       }}
-      onBlur={commit}
+      // `blur` burbujea en React, así que un `onBlur` a secas aquí también se
+      // dispara al saltar de "desde" a "hasta" con el tabulador — y mandaba una
+      // navegación con el rango a medio escribir, que es justo lo que este
+      // control quería evitar. Solo cuenta salir del formulario entero.
+      onBlur={(event) => {
+        if (event.currentTarget.contains(event.relatedTarget)) return;
+        commit();
+      }}
       // Los dos campos se reparten el ancho que les dé quien los coloca: fijo
       // en la barra, a todo lo ancho dentro del panel lateral.
       className={cn("flex items-center gap-2", className)}
