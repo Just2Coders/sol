@@ -234,7 +234,7 @@
   --spacing-section-md: 96px;
   --spacing-cta-top: 140px;
   --spacing-cta-bot: 120px;
-  --spacing-header: 28px;
+  --spacing-header: 16px;
   --spacing-grid: 48px;
 
   /* Motion: transiciones cortas y calmadas, nunca springs ni bounces. Los

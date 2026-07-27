@@ -19,9 +19,19 @@ const spaceMono = Space_Mono({
 });
 
 export const metadata: Metadata = {
+  // Base de las URLs relativas de metadata (canonical y Open Graph). En local
+  // cae a localhost; en Vercel se define NEXT_PUBLIC_SITE_URL con el dominio.
+  metadataBase: new URL(
+    process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000",
+  ),
   title: "Solaris — Paneles solares y kits de energía",
   description:
     "Compra paneles solares y kits de energía de proveedores que operan en tu zona.",
+  openGraph: {
+    siteName: "Solaris",
+    locale: "es_CU",
+    type: "website",
+  },
 };
 
 export default function RootLayout({

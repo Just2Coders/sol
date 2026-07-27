@@ -29,19 +29,27 @@ app/                    Presentación: rutas, páginas (RSC) y Server Actions
   actions/              Server Actions ("use server") — punto de entrada de mutaciones
   admin/                Panel de administración (rol ADMIN): zones, suppliers, products, kits
   account/              Área del cliente autenticado
-  catalog/              Catálogo público
+  catalog/              Catálogo público: listado, /products/[slug], /kits/[slug]
   globals.css           Design system: roles de color/tipografía y su registro en Tailwind
 components/
   ui/                   Primitivos de shadcn/ui (button, input, card, ...)
   auth/                 Componentes de cliente por feature (formularios de auth)
   admin/                Componentes de cliente del panel admin (formularios CRUD)
+  landing/              Home: hero, mapa de provincias, barra del sitio
+  catalog/              Catálogo público: filtros, tarjeta, galería, panel de compra
 lib/                    Lógica de servidor reutilizable (NO específica de una ruta)
   db/
     schema.ts           Definición de tablas y relaciones Drizzle (fuente del modelo)
     index.ts            Cliente `db` (Neon + Drizzle)
     seed.ts             Datos iniciales (zonas, admin, proveedor demo)
     migrations/         SQL generado por drizzle-kit (versionado en git)
+  catalog/
+    filters.ts          Los filtros del catálogo tal como viven en la URL (puro)
+    queries.ts          Lecturas del catálogo público (solo activo, por zona)
+  products/queries.ts   Lecturas de productos (panel admin)
+  kits/queries.ts       Lecturas de kits con sus componentes (panel admin)
   zones/queries.ts      Lecturas de zonas (jerarquía estado → ciudad)
+  zones/preference.ts   Cookie con la zona que eligió el visitante
   suppliers/queries.ts  Lecturas de proveedores (con zonas de cobertura)
   session.ts            Emisión/lectura/borrado de la cookie de sesión JWT
   dal.ts                Data Access Layer: verificación de sesión + lectura de usuario
@@ -83,6 +91,27 @@ Reglas concretas:
 > (p. ej. órdenes con su máquina de estados), extraemos su lógica a un
 > **service** en `lib/<módulo>/` y la Action pasa a ser una capa fina que llama
 > al service. Ver la receta en la sección 7.
+
+### Lecturas públicas vs. lecturas del panel
+
+Un mismo dato se lee distinto según quién mire, así que cada uno tiene su
+módulo en vez de una query con banderas:
+
+- `lib/products/queries.ts` y `lib/kits/queries.ts` sirven al **admin**: lo ven
+  todo, activo o no.
+- `lib/catalog/queries.ts` sirve al **catálogo público**: solo items activos de
+  proveedores activos, filtrados por la zona donde el visitante instala, y con
+  kits y productos unificados en un mismo tipo (`CatalogItem`) para que la
+  grilla no sepa de qué tabla viene cada tarjeta. Nunca expone datos internos
+  del proveedor (`payoutInfo`, teléfono, notas).
+
+Los filtros del catálogo viven en la **URL**, no en estado de cliente
+(`lib/catalog/filters.ts` los traduce en ambos sentidos): así una búsqueda se
+comparte, el botón atrás deshace filtro a filtro y la página se sigue
+resolviendo en el servidor. La única preferencia que además se recuerda es la
+zona, en una cookie httpOnly (`lib/zones/preference.ts`), que se escribe desde
+la Action `selectZone` — y se borra cuando el visitante quita el filtro, o
+volvería a aparecer sola en la siguiente visita.
 
 ## 4. Modelo de datos (resumen)
 

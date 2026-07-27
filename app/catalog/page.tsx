@@ -1,33 +1,177 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 
+import { browseWholeCountry } from "@/app/actions/preferences";
+import { CatalogCard } from "@/components/catalog/catalog-card";
+import { CatalogFilters } from "@/components/catalog/catalog-filters";
 import { Button } from "@/components/ui/button";
+import {
+  catalogHref,
+  hasNarrowingFilters,
+  parseCatalogFilters,
+  type CatalogFilters as Filters,
+  type RawSearchParams,
+} from "@/lib/catalog/filters";
+import { getCatalog, type CatalogResult } from "@/lib/catalog/queries";
+import { getZonePreference } from "@/lib/zones/preference";
+import { getZoneFilterOptions } from "@/lib/zones/queries";
 
-export const metadata = {
+export const metadata: Metadata = {
   title: "Catálogo — Solaris",
-  description: "Kits solares de proveedores verificados en tu provincia.",
+  description:
+    "Kits solares y equipos sueltos de proveedores verificados, filtrados por la provincia donde vas a instalar.",
+  alternates: { canonical: "/catalog" },
+  openGraph: {
+    title: "Catálogo — Solaris",
+    description:
+      "Kits solares y equipos sueltos de proveedores verificados, filtrados por la provincia donde vas a instalar.",
+    url: "/catalog",
+    type: "website",
+  },
 };
 
-/**
- * Marcador de posición del catálogo (Etapa 5 del PLAN).
- *
- * Existe para que los CTA "Explora los kits" del hero tengan destino real en
- * vez de un 404. Se reemplaza por el catálogo cuando llegue su etapa.
- */
-export default function CatalogPage() {
+// Precios, stock y altas de proveedores cambian a diario: nada que cachear.
+export const dynamic = "force-dynamic";
+
+export default async function CatalogPage({
+  searchParams,
+}: {
+  searchParams: Promise<RawSearchParams>;
+}) {
+  const params = await searchParams;
+  // Sin zona en la URL manda la que el visitante eligió antes (cookie).
+  const filters = parseCatalogFilters(params, await getZonePreference());
+
+  const [catalog, zones] = await Promise.all([
+    getCatalog(filters),
+    getZoneFilterOptions(),
+  ]);
+
   return (
-    <main className="px-gutter py-section-md flex flex-1 flex-col items-center justify-center gap-6 text-center">
-      <span className="text-muted-foreground text-label font-mono">
-        catálogo · en construcción
-      </span>
-      <h1 className="text-heading-1 max-w-[16ch]">Estamos armando los kits.</h1>
-      <p className="text-muted-foreground text-body max-w-[50ch]">
-        Muy pronto vas a poder comparar kits de distintos proveedores, ver
-        cuántas horas de respaldo te da cada uno y coordinar la instalación en
-        tu provincia.
-      </p>
-      <Button asChild variant="outline">
-        <Link href="/">Volver al inicio</Link>
-      </Button>
+    // El scroll vive aquí dentro, no en el documento: el header queda arriba
+    // fijo y la barra de filtros se ancla en el borde de este contenedor, así
+    // que no puede salirse de pantalla por mucho que se baje.
+    <main className="min-h-0 flex-1 overflow-y-auto">
+      {/* El título ocupa la primera pantalla y se va con el scroll: a partir de
+          ahí manda la barra de filtros. */}
+      <section className="px-gutter pt-section-sm pb-section-md">
+        <h1 className="text-foreground text-display-1">Catálogo</h1>
+      </section>
+
+      <CatalogFilters
+        filters={filters}
+        zones={zones}
+        suppliers={catalog.suppliers}
+        counts={catalog.counts}
+      />
+
+      {catalog.items.length === 0 ? (
+        <section className="px-gutter py-section-sm">
+          <EmptyState filters={filters} catalog={catalog} />
+        </section>
+      ) : (
+        // A sangre y sin gap: la retícula se dibuja sola con el fondo de línea
+        // asomando entre celdas (gap-px sobre bg-border), como una tabla.
+        <ul className="bg-border grid grid-cols-1 gap-px sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          {catalog.items.map((item) => (
+            <CatalogCard key={`${item.type}-${item.id}`} item={item} />
+          ))}
+        </ul>
+      )}
     </main>
+  );
+}
+
+/**
+ * El vacío no es uno solo, y cada uno tiene su salida: una provincia que no
+ * existe, una sin proveedores todavía, unos filtros demasiado estrechos o un
+ * catálogo que aún nadie ha publicado.
+ */
+function EmptyState({
+  filters,
+  catalog,
+}: {
+  filters: Filters;
+  catalog: CatalogResult;
+}) {
+  if (catalog.unknownZone) {
+    return (
+      <Message
+        title="No conocemos esa provincia."
+        body="El enlace trae una zona que no existe. Empieza de nuevo desde el catálogo completo."
+      >
+        <Button asChild variant="outline" size="lg">
+          <Link href="/catalog">Ver el catálogo completo</Link>
+        </Button>
+      </Message>
+    );
+  }
+
+  if (catalog.suppliers.length === 0 && catalog.zone) {
+    return (
+      <Message
+        title={`Todavía no llegamos a ${catalog.zone.name}.`}
+        body="Ningún proveedor instala ahí por ahora. Puedes mirar lo que hay en el resto de la isla mientras tanto."
+      >
+        {/* Un enlace no bastaría: hay que borrar la zona guardada, o la
+            siguiente visita volvería a caer en esta misma pantalla. */}
+        <form action={browseWholeCountry}>
+          <Button type="submit" variant="outline" size="lg">
+            Ver toda la isla
+          </Button>
+        </form>
+      </Message>
+    );
+  }
+
+  if (!hasNarrowingFilters(filters) && catalog.counts.all === 0) {
+    return (
+      <Message
+        title="Todavía no hay nada publicado."
+        body="Los proveedores están cargando sus kits y equipos. Vuelve en unos días."
+      />
+    );
+  }
+
+  return (
+    <Message
+      title="Nada cumple esos filtros."
+      body="Prueba a ensanchar el rango de precio o a quitar el proveedor."
+    >
+      {hasNarrowingFilters(filters) && (
+        <Button asChild variant="outline" size="lg">
+          <Link
+            href={catalogHref({
+              ...filters,
+              supplier: null,
+              type: null,
+              minUsd: null,
+              maxUsd: null,
+              sort: "suggested",
+            })}
+          >
+            Limpiar filtros
+          </Link>
+        </Button>
+      )}
+    </Message>
+  );
+}
+
+function Message({
+  title,
+  body,
+  children,
+}: {
+  title: string;
+  body: string;
+  children?: React.ReactNode;
+}) {
+  return (
+    <div className="border-border mt-8 flex flex-col items-start gap-4 rounded-md border border-dashed p-10">
+      <h2 className="text-foreground text-heading-2 max-w-[24ch]">{title}</h2>
+      <p className="text-muted-foreground text-body max-w-[50ch]">{body}</p>
+      {children}
+    </div>
   );
 }

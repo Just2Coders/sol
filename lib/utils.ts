@@ -15,6 +15,24 @@ export function slugify(s: string): string {
     .replace(/(^-|-$)/g, "");
 }
 
+// Precios: $1,699 y $1,699.50. Los centavos solo aparecen si los hay — en un
+// listado de kits las columnas de ",00" son ruido.
+const usdWhole = new Intl.NumberFormat("en-US", {
+  style: "currency",
+  currency: "USD",
+  maximumFractionDigits: 0,
+});
+const usdCents = new Intl.NumberFormat("en-US", {
+  style: "currency",
+  currency: "USD",
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+});
+
+export function formatUsd(value: number): string {
+  return Number.isInteger(value) ? usdWhole.format(value) : usdCents.format(value);
+}
+
 // Acepta solo rutas internas ("/checkout", nunca "//evil.com" ni "https://...")
 // para usar valores de ?from= como destino de redirección sin open redirect.
 export function safeInternalPath(value: unknown): string | null {
