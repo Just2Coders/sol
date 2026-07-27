@@ -1,12 +1,13 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
+import { revalidatePath, revalidateTag } from "next/cache";
 import { and, eq, ne } from "drizzle-orm";
 import * as z from "zod";
 import { db } from "@/lib/db";
 import { orders, supplierZones, users, zones } from "@/lib/db/schema";
 import { verifyAdmin } from "@/lib/dal";
 import { slugify } from "@/lib/utils";
+import { ZONES_CACHE_TAG } from "@/lib/zones/queries";
 
 export type ZoneFormState =
   | {
@@ -27,6 +28,12 @@ const idSchema = z.uuid();
 function revalidateZones() {
   revalidatePath("/admin/zones");
   revalidatePath("/signup");
+  // El filtro del catálogo no va por ruta: su árbol está cacheado por etiqueta
+  // porque se sirve igual en `/catalog` y en cualquier combinación de filtros.
+  // `"max"` marca la entrada como vieja y refresca por detrás en la siguiente
+  // visita, así que el desplegable público puede ir una carga por detrás. El
+  // admin no lo nota: sus pantallas leen el árbol sin cachear.
+  revalidateTag(ZONES_CACHE_TAG, "max");
 }
 
 export async function createZone(

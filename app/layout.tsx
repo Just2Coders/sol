@@ -44,7 +44,16 @@ export default function RootLayout({
       lang="es"
       className={`${bricolage.variable} ${spaceMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col">{children}</body>
+      {/* Las extensiones del navegador escriben en el `<body>` antes de que
+          React hidrate (ColorZilla le cuelga `cz-shortcut-listen`, los gestores
+          de contraseñas y los traductores hacen lo suyo), y ese atributo de más
+          rompe la comparación con el HTML del servidor. No es algo que la app
+          pueda evitar ni arreglar: se silencia aquí, que solo afecta a los
+          atributos de este elemento —un nivel, no el árbol— así que cualquier
+          descuadre real de dentro se sigue viendo. */}
+      <body suppressHydrationWarning className="min-h-full flex flex-col">
+        {children}
+      </body>
     </html>
   );
 }

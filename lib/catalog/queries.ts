@@ -1,8 +1,10 @@
 import "server-only";
 import { cache } from "react";
-import { and, eq, gte, inArray, lte, type SQL } from "drizzle-orm";
+import { and, count, eq, exists, gte, inArray, lte, sql, type SQL } from "drizzle-orm";
+import { unionAll } from "drizzle-orm/pg-core";
 import { db } from "@/lib/db";
 import {
+  kitItems,
   kits,
   products,
   supplierZones,
@@ -10,7 +12,21 @@ import {
   zones,
 } from "@/lib/db/schema";
 import { sumItemsUsd, type KitItemDetail } from "@/lib/kits/queries";
-import type { CatalogFilters, CatalogSort, CatalogType } from "./filters";
+import {
+  CATALOG_PAGE_SIZE,
+  type CatalogFilters,
+  type CatalogSort,
+  type CatalogType,
+} from "./filters";
+
+/**
+ * Un colador por módulo, no uno por comparación. `String.prototype.localeCompare`
+ * instancia un `Intl.Collator` en cada llamada, así que usarlo dentro de un
+ * `sort()` construye N·log N coladores para tirarlos acto seguido. El listado
+ * lo ordena Postgres; esto solo peina listas cortas (la cobertura de un
+ * proveedor, las piezas de un kit).
+ */
+const collator = new Intl.Collator("es");
 
 /**
  * Lecturas del catálogo público.
@@ -54,6 +70,10 @@ export type CatalogResult = {
   zone: { slug: string; name: string } | null;
   /** La URL pedía una zona que no existe: el catálogo sale vacío a propósito. */
   unknownZone: boolean;
+  /** Página servida (1-based), ya recortada a `pageCount`. */
+  page: number;
+  /** Total de páginas del tipo visible; 1 aunque no haya nada que mostrar. */
+  pageCount: number;
 };
 
 // ─── Ámbito: zona → proveedores ──────────────────────────────────────────────
@@ -83,6 +103,10 @@ const resolveZone = cache(async function resolveZone(
   };
 });
 
+/**
+ * Los proveedores del ámbito — la lista que alimenta el selector, sin aplicar
+ * el filtro de proveedor (si no, el selector se quedaría con una sola opción).
+ */
 async function getSuppliersInScope(
   zone: ResolvedZone | null,
 ): Promise<CatalogSupplier[]> {
@@ -108,6 +132,47 @@ async function getSuppliersInScope(
     .orderBy(suppliers.name);
 }
 
+/**
+ * El ámbito, como condiciones sobre `suppliers` dentro de la propia query de
+ * items.
+ *
+ * Antes esto era un viaje aparte: se traían los ids de los proveedores y se
+ * mandaban de vuelta en un `IN (...)`. Resolverlo aquí ahorra un salto de red
+ * completo —con Neon por HTTP cada salto es latencia real— y deja que la lista
+ * de proveedores del selector se pida **en paralelo** con los items.
+ */
+function scopeConditions(
+  zone: ResolvedZone | null,
+  supplierSlug: string | null,
+): SQL[] {
+  const conditions: SQL[] = [eq(suppliers.active, true)];
+
+  // El proveedor entra por slug, que es lo que trae la URL: así no hay que
+  // resolver su id antes de poder preguntar por sus productos.
+  if (supplierSlug) conditions.push(eq(suppliers.slug, supplierSlug));
+
+  // Sin zona no se escribe ningún `IN (...)`. Mandar la lista entera de
+  // proveedores para decir "todos" es peso muerto en el cable y le esconde el
+  // índice a Postgres.
+  if (zone) {
+    conditions.push(
+      exists(
+        db
+          .select({ ok: sql`1` })
+          .from(supplierZones)
+          .where(
+            and(
+              eq(supplierZones.supplierId, suppliers.id),
+              inArray(supplierZones.zoneId, zone.ids),
+            ),
+          ),
+      ),
+    );
+  }
+
+  return conditions;
+}
+
 // ─── Listado ─────────────────────────────────────────────────────────────────
 
 function priceConditions(
@@ -128,38 +193,227 @@ function specsSummary(specs: Record<string, string>): string | null {
 }
 
 // "3 componentes · 6 piezas": el desglose completo se ve en la página del kit.
-function kitSummary(items: { quantity: number }[]): string | null {
-  if (items.length === 0) return null;
-  const pieces = items.reduce((total, item) => total + item.quantity, 0);
-  const components = `${items.length} ${items.length === 1 ? "componente" : "componentes"}`;
-  return `${components} · ${pieces} ${pieces === 1 ? "pieza" : "piezas"}`;
+function kitSummary(components: number, pieces: number): string | null {
+  if (components === 0) return null;
+  const left = `${components} ${components === 1 ? "componente" : "componentes"}`;
+  return `${left} · ${pieces} ${pieces === 1 ? "pieza" : "piezas"}`;
 }
 
-function sortItems(items: CatalogItem[], sort: CatalogSort): CatalogItem[] {
-  const byName = (a: CatalogItem, b: CatalogItem) =>
-    a.name.localeCompare(b.name);
+/**
+ * La fila que devuelven las dos ramas del listado.
+ *
+ * Kits y productos se leen con la **misma** forma para poder unirlos en SQL
+ * (`UNION ALL`) y que sea Postgres quien ordene, corte y pagine. Las columnas
+ * que solo tiene un lado viajan neutras en el otro: un kit nunca tiene `specs`
+ * y un producto nunca tiene piezas.
+ */
+type CatalogRow = {
+  type: CatalogType;
+  /** 0 = kit, 1 = producto. Es la primera clave del orden "sugerido". */
+  rank: number;
+  id: string;
+  slug: string;
+  name: string;
+  /** `lower(name)`: el desempate del orden, insensible a mayúsculas. */
+  sortName: string;
+  priceUsd: number;
+  image: string | null;
+  supplierName: string;
+  specs: Record<string, string>;
+  componentCount: number;
+  pieceCount: number;
+  stock: number;
+};
 
+/**
+ * Solo las columnas que dibuja una tarjeta.
+ *
+ * Nada de `description` (texto largo) ni del array de imágenes entero: la celda
+ * enseña la primera foto y dos datos. Antes se traían las filas completas de
+ * las dos tablas y se descartaba casi todo ya en Node.
+ */
+function kitQuery(filters: CatalogFilters, zone: ResolvedZone | null) {
+  return db
+    .select({
+      type: sql<CatalogType>`'KIT'`.as("type"),
+      rank: sql<number>`0`.as("rank"),
+      id: kits.id,
+      slug: kits.slug,
+      name: kits.name,
+      sortName: sql<string>`lower(${kits.name})`.as("sort_name"),
+      priceUsd: kits.priceUsd,
+      // Los arrays de Postgres empiezan en 1; fuera de rango da NULL, que es
+      // justo el "todavía sin foto" que espera la tarjeta.
+      image: sql<string | null>`${kits.images}[1]`.as("image"),
+      // `name` ya lo ocupa el kit: sin este alias las dos columnas chocarían.
+      supplierName: sql<string>`${suppliers.name}`.as("supplier_name"),
+      specs: sql<Record<string, string>>`'{}'::jsonb`.as("specs"),
+      componentCount: sql<number>`(select count(*)::int from ${kitItems} where ${kitItems.kitId} = ${kits.id})`.as(
+        "component_count",
+      ),
+      pieceCount: sql<number>`(select coalesce(sum(${kitItems.quantity}), 0)::int from ${kitItems} where ${kitItems.kitId} = ${kits.id})`.as(
+        "piece_count",
+      ),
+      // Un kit nunca se marca sin stock; la columna existe para cuadrar la unión.
+      stock: sql<number>`1`.as("stock"),
+    })
+    .from(kits)
+    .innerJoin(suppliers, eq(suppliers.id, kits.supplierId))
+    .where(
+      and(
+        eq(kits.active, true),
+        ...scopeConditions(zone, filters.supplier),
+        ...priceConditions(kits.priceUsd, filters),
+      ),
+    );
+}
+
+function productQuery(filters: CatalogFilters, zone: ResolvedZone | null) {
+  return db
+    .select({
+      type: sql<CatalogType>`'PRODUCT'`.as("type"),
+      rank: sql<number>`1`.as("rank"),
+      id: products.id,
+      slug: products.slug,
+      name: products.name,
+      sortName: sql<string>`lower(${products.name})`.as("sort_name"),
+      priceUsd: products.priceUsd,
+      image: sql<string | null>`${products.images}[1]`.as("image"),
+      supplierName: sql<string>`${suppliers.name}`.as("supplier_name"),
+      specs: products.specs,
+      componentCount: sql<number>`0`.as("component_count"),
+      pieceCount: sql<number>`0`.as("piece_count"),
+      stock: products.stock,
+    })
+    .from(products)
+    .innerJoin(suppliers, eq(suppliers.id, products.supplierId))
+    .where(
+      and(
+        eq(products.active, true),
+        ...scopeConditions(zone, filters.supplier),
+        ...priceConditions(products.priceUsd, filters),
+      ),
+    );
+}
+
+/**
+ * El `ORDER BY` de un `UNION` solo puede nombrar columnas **de salida** —los
+ * alias de arriba—, nunca `kits.price_usd`: por eso va como `sql` crudo y no
+ * como `asc(columna)`, que drizzle renderizaría cualificado por tabla.
+ *
+ * El desempate por nombre lo hace la colación de la base, no `Intl`. Para
+ * nombres de equipos (mayúsculas, números, alguna tilde) la diferencia no se
+ * ve, y a cambio el orden y el corte ocurren en el mismo sitio.
+ */
+function orderClauses(sort: CatalogSort): SQL[] {
   switch (sort) {
     case "price-asc":
-      return items.sort((a, b) => a.priceUsd - b.priceUsd || byName(a, b));
+      return [sql`price_usd asc`, sql`sort_name asc`];
     case "price-desc":
-      return items.sort((a, b) => b.priceUsd - a.priceUsd || byName(a, b));
+      return [sql`price_usd desc`, sql`sort_name asc`];
     // Sugerido: los kits primero — es lo que la casa compra — y dentro de cada
     // grupo, del más barato al más caro.
     case "suggested":
-      return items.sort(
-        (a, b) =>
-          Number(a.type === "PRODUCT") - Number(b.type === "PRODUCT") ||
-          a.priceUsd - b.priceUsd ||
-          byName(a, b),
-      );
+      return [sql`rank asc`, sql`price_usd asc`, sql`sort_name asc`];
   }
 }
 
 /**
- * El catálogo entero para unos filtros: items, conteos por tipo y proveedores
- * del ámbito. Sin paginación todavía: el volumen de la Fase 1 cabe de sobra en
- * una respuesta, y cuando no quepa el corte natural es aquí.
+ * Una página del listado, ordenada y cortada por Postgres.
+ *
+ * Con el tipo filtrado se consulta **una sola** tabla: pedir kits ya no arrastra
+ * la tabla de productos entera (el contador que la barra necesita sale de un
+ * `count()`, no de traerse las filas).
+ */
+async function listItems(
+  filters: CatalogFilters,
+  zone: ResolvedZone | null,
+): Promise<CatalogRow[]> {
+  const order = orderClauses(filters.sort);
+  const offset = (filters.page - 1) * CATALOG_PAGE_SIZE;
+
+  if (filters.type === "KIT") {
+    return kitQuery(filters, zone)
+      .orderBy(...order)
+      .limit(CATALOG_PAGE_SIZE)
+      .offset(offset);
+  }
+
+  if (filters.type === "PRODUCT") {
+    return productQuery(filters, zone)
+      .orderBy(...order)
+      .limit(CATALOG_PAGE_SIZE)
+      .offset(offset);
+  }
+
+  return unionAll(kitQuery(filters, zone), productQuery(filters, zone))
+    .orderBy(...order)
+    .limit(CATALOG_PAGE_SIZE)
+    .offset(offset);
+}
+
+/** Cuántos hay, sin traérselos. Alimenta el selector Todo · Kits · Productos. */
+async function countKits(
+  filters: CatalogFilters,
+  zone: ResolvedZone | null,
+): Promise<number> {
+  const [row] = await db
+    .select({ n: count() })
+    .from(kits)
+    .innerJoin(suppliers, eq(suppliers.id, kits.supplierId))
+    .where(
+      and(
+        eq(kits.active, true),
+        ...scopeConditions(zone, filters.supplier),
+        ...priceConditions(kits.priceUsd, filters),
+      ),
+    );
+  return row?.n ?? 0;
+}
+
+async function countProducts(
+  filters: CatalogFilters,
+  zone: ResolvedZone | null,
+): Promise<number> {
+  const [row] = await db
+    .select({ n: count() })
+    .from(products)
+    .innerJoin(suppliers, eq(suppliers.id, products.supplierId))
+    .where(
+      and(
+        eq(products.active, true),
+        ...scopeConditions(zone, filters.supplier),
+        ...priceConditions(products.priceUsd, filters),
+      ),
+    );
+  return row?.n ?? 0;
+}
+
+function toItem(row: CatalogRow): CatalogItem {
+  return {
+    type: row.type,
+    id: row.id,
+    slug: row.slug,
+    name: row.name,
+    priceUsd: row.priceUsd,
+    image: row.image,
+    supplierName: row.supplierName,
+    summary:
+      row.type === "KIT"
+        ? kitSummary(row.componentCount, row.pieceCount)
+        : specsSummary(row.specs),
+    outOfStock: row.type === "PRODUCT" && row.stock === 0,
+  };
+}
+
+/**
+ * Una página del catálogo para unos filtros: items, conteos por tipo y
+ * proveedores del ámbito.
+ *
+ * Solo hay **dos** niveles de espera. El primero resuelve la zona (hace falta
+ * su nombre para el vacío y sus hijas para el ámbito); el segundo lanza a la
+ * vez el listado, los dos contadores y la lista de proveedores, que ya no
+ * dependen unos de otros.
  */
 export async function getCatalog(
   filters: CatalogFilters,
@@ -171,77 +425,33 @@ export async function getCatalog(
     suppliers: [],
     zone: zone && { slug: zone.slug, name: zone.name },
     unknownZone: filters.zone !== null && zone === null,
+    page: 1,
+    pageCount: 1,
   };
   if (empty.unknownZone) return empty;
 
-  const scope = await getSuppliersInScope(zone);
-  const selected = filters.supplier
-    ? scope.filter((supplier) => supplier.slug === filters.supplier)
-    : scope;
-  if (selected.length === 0) return { ...empty, suppliers: scope };
-
-  const supplierIds = selected.map((supplier) => supplier.id);
-  const [productRows, kitRows] = await Promise.all([
-    db.query.products.findMany({
-      where: and(
-        eq(products.active, true),
-        inArray(products.supplierId, supplierIds),
-        ...priceConditions(products.priceUsd, filters),
-      ),
-      with: { supplier: { columns: { name: true } } },
-    }),
-    db.query.kits.findMany({
-      where: and(
-        eq(kits.active, true),
-        inArray(kits.supplierId, supplierIds),
-        ...priceConditions(kits.priceUsd, filters),
-      ),
-      with: {
-        supplier: { columns: { name: true } },
-        items: { columns: { quantity: true } },
-      },
-    }),
+  const [scope, kitCount, productCount, rows] = await Promise.all([
+    getSuppliersInScope(zone),
+    countKits(filters, zone),
+    countProducts(filters, zone),
+    listItems(filters, zone),
   ]);
 
-  const items: CatalogItem[] = [
-    ...kitRows.map((kit) => ({
-      type: "KIT" as const,
-      id: kit.id,
-      slug: kit.slug,
-      name: kit.name,
-      priceUsd: kit.priceUsd,
-      image: kit.images[0] ?? null,
-      supplierName: kit.supplier.name,
-      summary: kitSummary(kit.items),
-      outOfStock: false,
-    })),
-    ...productRows.map((product) => ({
-      type: "PRODUCT" as const,
-      id: product.id,
-      slug: product.slug,
-      name: product.name,
-      priceUsd: product.priceUsd,
-      image: product.images[0] ?? null,
-      supplierName: product.supplier.name,
-      summary: specsSummary(product.specs),
-      outOfStock: product.stock === 0,
-    })),
-  ];
-
-  const visible = filters.type
-    ? items.filter((item) => item.type === filters.type)
-    : items;
+  const counts = {
+    all: kitCount + productCount,
+    KIT: kitCount,
+    PRODUCT: productCount,
+  };
+  const total = filters.type ? counts[filters.type] : counts.all;
 
   return {
-    items: sortItems(visible, filters.sort),
-    counts: {
-      all: items.length,
-      KIT: kitRows.length,
-      PRODUCT: productRows.length,
-    },
+    items: rows.map(toItem),
+    counts,
     suppliers: scope,
     zone: empty.zone,
     unknownZone: false,
+    page: filters.page,
+    pageCount: Math.max(1, Math.ceil(total / CATALOG_PAGE_SIZE)),
   };
 }
 
@@ -301,7 +511,7 @@ function toCatalogSupplier(supplier: SupplierRow): CatalogItemSupplier {
     slug: supplier.slug,
     zoneNames: supplier.zones
       .map((sz) => sz.zone.name)
-      .sort((a, b) => a.localeCompare(b)),
+      .sort((a, b) => collator.compare(a, b)),
   };
 }
 
@@ -359,7 +569,7 @@ export const getCatalogKit = cache(async function getCatalogKit(
       quantity: item.quantity,
       unitPriceUsd: item.product.priceUsd,
     }))
-    .sort((a, b) => a.productName.localeCompare(b.productName));
+    .sort((a, b) => collator.compare(a.productName, b.productName));
 
   const itemsTotalUsd = sumItemsUsd(detail);
   return {
