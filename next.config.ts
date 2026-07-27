@@ -1,10 +1,13 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  // `reicon-react` exporta 2674 iconos desde un solo barrel: sin esto, cada
-  // import de un icono arrastra el módulo entero en dev.
   experimental: {
-    optimizePackageImports: ["reicon-react"],
+    // Los dos son barriles grandes que se importan por nombre desde media app.
+    // `reicon-react` reexporta 2674 iconos, así que sin esto cada import de uno
+    // arrastra el módulo entero en dev; `radix-ui` es el paquete paraguas que
+    // reexporta todos los `@radix-ui/react-*`, y de él salen los primitivos de
+    // `components/ui` (select, sheet, dialog…).
+    optimizePackageImports: ["reicon-react", "radix-ui"],
   },
 };
 

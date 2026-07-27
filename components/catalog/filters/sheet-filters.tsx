@@ -1,32 +1,29 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { useState } from "react";
 import { Filter } from "reicon-react";
 
 import { Button } from "@/components/ui/button";
 import {
-  Sheet,
-  SheetBody,
-  SheetClose,
-  SheetContent,
-  SheetDescription,
-  SheetFooter,
-  SheetHeader,
-  SheetTitle,
-  SheetTrigger,
-} from "@/components/ui/sheet";
-import {
   ActiveFilterChips,
-  Field,
-  PriceRange,
   SortSelect,
-  SupplierSelect,
   TypeSwitch,
-  ZoneSelect,
   countActive,
   useFilterActions,
   type CatalogFiltersProps,
 } from "./controls";
+
+/**
+ * El panel entra por su propio chunk: es lo único de la barra que arrastra el
+ * diálogo de Radix (portal, focus trap, presence, scroll lock) y solo hace
+ * falta cuando alguien decide filtrar. No necesita `ssr: false` — abajo no se
+ * monta hasta que hay intención de abrirlo, así que en el render del servidor
+ * no existe.
+ */
+const FilterSheet = dynamic(() =>
+  import("./filter-sheet").then((mod) => mod.FilterSheet),
+);
 
 /**
  * Variante B — panel lateral.
@@ -48,6 +45,12 @@ export function SheetFilters({
 }: CatalogFiltersProps) {
   const { apply, clear, pending } = useFilterActions(filters);
   const [open, setOpen] = useState(false);
+  // El panel se pide al primer gesto que anuncia el clic —pasar por encima,
+  // enfocar con el tabulador, apoyar el dedo—, no al clic en sí: para cuando
+  // llega, el chunk ya está. Una vez montado se queda; volver a esconderlo solo
+  // tiraría el trabajo hecho.
+  const [mounted, setMounted] = useState(false);
+  const preload = () => setMounted(true);
 
   const active = countActive(filters, ["zone", "supplier", "price"]);
   const visible = filters.type ? counts[filters.type] : counts.all;
@@ -78,74 +81,39 @@ export function SheetFilters({
           className="w-56"
         />
 
-        <Sheet open={open} onOpenChange={setOpen}>
-          <SheetTrigger asChild>
-            <Button variant="outline">
-              <Filter aria-hidden />
-              Filtros
-              {active > 0 && (
-                <span className="bg-primary text-primary-foreground text-marginalia ml-1 rounded-md px-1.5 font-mono">
-                  {active}
-                </span>
-              )}
-            </Button>
-          </SheetTrigger>
+        <Button
+          variant="outline"
+          aria-expanded={open}
+          aria-haspopup="dialog"
+          onPointerEnter={preload}
+          onPointerDown={preload}
+          onFocus={preload}
+          onClick={() => {
+            setMounted(true);
+            setOpen(true);
+          }}
+        >
+          <Filter aria-hidden />
+          Filtros
+          {active > 0 && (
+            <span className="bg-primary text-primary-foreground text-marginalia ml-1 rounded-md px-1.5 font-mono">
+              {active}
+            </span>
+          )}
+        </Button>
 
-          <SheetContent aria-describedby={undefined}>
-            <SheetHeader>
-              <SheetTitle>Filtros</SheetTitle>
-              <SheetDescription>
-                Se aplican al momento; puedes seguir viendo el catálogo detrás.
-              </SheetDescription>
-            </SheetHeader>
-
-            <SheetBody className="flex flex-col gap-6">
-              <Field label="provincia">
-                <ZoneSelect
-                  value={filters.zone}
-                  zones={zones}
-                  onChange={(zone) => apply({ zone, supplier: null })}
-                  className="w-full"
-                />
-              </Field>
-
-              <Field label="proveedor">
-                <SupplierSelect
-                  value={filters.supplier}
-                  suppliers={suppliers}
-                  onChange={(supplier) => apply({ supplier })}
-                  className="w-full"
-                />
-                {suppliers.length === 0 && (
-                  <p className="text-muted-foreground text-caption">
-                    Ningún proveedor opera en esa provincia todavía.
-                  </p>
-                )}
-              </Field>
-
-              <Field label="precio usd">
-                <PriceRange
-                  key={`${filters.minUsd}-${filters.maxUsd}`}
-                  minUsd={filters.minUsd}
-                  maxUsd={filters.maxUsd}
-                  onChange={(range) => apply(range)}
-                  className="w-full"
-                />
-              </Field>
-            </SheetBody>
-
-            <SheetFooter className="flex items-center justify-between gap-3">
-              <Button variant="ghost" onClick={clear}>
-                Limpiar
-              </Button>
-              <SheetClose asChild>
-                <Button>
-                  Ver {visible} {visible === 1 ? "resultado" : "resultados"}
-                </Button>
-              </SheetClose>
-            </SheetFooter>
-          </SheetContent>
-        </Sheet>
+        {mounted && (
+          <FilterSheet
+            open={open}
+            onOpenChange={setOpen}
+            filters={filters}
+            zones={zones}
+            suppliers={suppliers}
+            apply={apply}
+            clear={clear}
+            visible={visible}
+          />
+        )}
       </div>
     </div>
   );
