@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft } from "reicon-react";
 
 import { CatalogGallery } from "@/components/catalog/catalog-gallery";
 import { CatalogPurchasePanel } from "@/components/catalog/catalog-purchase-panel";

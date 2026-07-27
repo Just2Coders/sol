@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import { Dialog as SheetPrimitive } from "radix-ui"
-import { XIcon } from "lucide-react"
+import { X } from "reicon-react"
 
 import { cn } from "@/lib/utils"
 
@@ -45,7 +45,7 @@ function SheetContent({
       >
         {children}
         <SheetPrimitive.Close className="absolute top-5 right-5 rounded-md p-1 text-muted-foreground transition-colors hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none">
-          <XIcon className="size-4" />
+          <X aria-hidden className="size-4" />
           <span className="sr-only">Cerrar</span>
         </SheetPrimitive.Close>
       </SheetPrimitive.Content>

@@ -1,7 +1,7 @@
 "use client";
 
 import { useActionState, useState } from "react";
-import { Check, Pencil, Trash2, X } from "lucide-react";
+import { Check, Edit2, Trash2, X } from "reicon-react";
 import { deleteZone, updateZone, type ZoneFormState } from "@/app/actions/zones";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -34,7 +34,7 @@ export function ZoneItem({
           <input type="hidden" name="id" value={zone.id} />
           <Input name="name" defaultValue={zone.name} required autoFocus className="h-8" />
           <Button type="submit" size="icon" variant="ghost" disabled={updating} title="Guardar">
-            <Check className="size-4" />
+            <Check aria-hidden className="size-4" />
           </Button>
           <Button
             type="button"
@@ -43,7 +43,7 @@ export function ZoneItem({
             title="Cancelar"
             onClick={() => setEditing(false)}
           >
-            <X className="size-4" />
+            <X aria-hidden className="size-4" />
           </Button>
         </form>
         {(updateState?.errors?.name || updateState?.message) && (
@@ -67,7 +67,7 @@ export function ZoneItem({
           className="opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
           onClick={() => setEditing(true)}
         >
-          <Pencil className="size-4" />
+          <Edit2 aria-hidden className="size-4" />
         </Button>
         <form
           action={deleteAction}
@@ -84,7 +84,7 @@ export function ZoneItem({
             disabled={deleting}
             className="text-destructive opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
           >
-            <Trash2 className="size-4" />
+            <Trash2 aria-hidden className="size-4" />
           </Button>
         </form>
       </div>
