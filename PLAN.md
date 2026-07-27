@@ -91,10 +91,15 @@ Decisiones clave:
 
 ### Etapa 5 — Catálogo público (2–3 días)
 - [ ] Landing con propuesta de valor y selector de zona (persistido en cookie).
+      *La persistencia ya existe (`lib/zones/preference.ts` + la Action
+      `selectZone` en `app/actions/preferences.ts`); falta que el selector del
+      mapa la use.*
 - [ ] Listado de proveedores que operan en la zona elegida.
-- [ ] Catálogo filtrado por zona, con filtros por proveedor, tipo (producto/kit) y rango de precio.
-- [ ] Página de detalle de producto (galería, specs, proveedor) y de kit (qué incluye).
-- [ ] SEO básico: metadata, slugs limpios, Open Graph.
+      *La resolución zona → proveedores ya está en `lib/catalog/queries.ts` y
+      alimenta el filtro del catálogo; queda la página propia de proveedores.*
+- [x] Catálogo filtrado por zona, con filtros por proveedor, tipo (producto/kit) y rango de precio.
+- [x] Página de detalle de producto (galería, specs, proveedor) y de kit (qué incluye).
+- [x] SEO básico: metadata, slugs limpios, Open Graph.
 
 ### Etapa 6 — Carrito y checkout (2 días)
 - [ ] Carrito client-side (Context o Zustand) persistido en localStorage.

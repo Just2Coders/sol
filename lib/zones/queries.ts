@@ -22,6 +22,27 @@ export async function getZoneTree(): Promise<ZoneTreeState[]> {
   }));
 }
 
+export type ZoneFilterGroup = {
+  name: string;
+  slug: string;
+  cities: { name: string; slug: string }[];
+};
+
+/**
+ * La jerarquía por slug, para el filtro de zona del catálogo público.
+ *
+ * Se distingue de `getZoneOptions()` porque ahí la zona viaja por id (es un
+ * campo de formulario) y aquí por slug (es parte de la URL).
+ */
+export async function getZoneFilterOptions(): Promise<ZoneFilterGroup[]> {
+  const states = await getZoneTree();
+  return states.map((state) => ({
+    name: state.name,
+    slug: state.slug,
+    cities: state.children.map((city) => ({ name: city.name, slug: city.slug })),
+  }));
+}
+
 export type ZoneOptionGroup = {
   id: string;
   name: string;

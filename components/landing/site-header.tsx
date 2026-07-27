@@ -14,22 +14,35 @@ type SiteHeaderProps = {
    * foto y se vuelve sólida al pasarlo. Sin esto nace sólida.
    */
   overHero?: boolean;
+  /**
+   * Por defecto el header flota fijo sobre el documento (la home, donde tiene
+   * que montarse encima de la foto). Con `floating={false}` es una fila normal
+   * de su contenedor: lo usan las pantallas con scroll propio (el catálogo),
+   * donde el header es el techo de la columna y nadie necesita saber cuánto
+   * mide para colocarse debajo.
+   */
+  floating?: boolean;
 };
 
-// Alto aproximado del header: sirve para decidir en qué punto exacto del
-// scroll la barra deja de flotar sobre la foto.
-const HEADER_HEIGHT = 96;
+// Alto aproximado del header: solo lo usa el centinela del hero para decidir en
+// qué punto del scroll la barra deja de flotar sobre la foto. Ninguna página
+// depende ya de este número para colocarse debajo.
+const HEADER_HEIGHT = 72;
 
 /**
- * Barra fija de la landing. Sobre el hero va transparente, como si formara
- * parte de la foto; al pasar el hero se materializa en el fondo de página y sigue
- * en pantalla el resto de la página — que es lo que cose la home en un solo
+ * Barra del sitio. Sobre el hero va transparente, como si formara parte de la
+ * foto; al pasar el hero se materializa en el fondo de página y sigue en
+ * pantalla el resto de la página — que es lo que cose la home en un solo
  * documento en vez de dos.
  *
  * El cambio se dispara con el centinela (`data-hero-end`) que el hero deja al
  * final de la foto.
  */
-export function SiteHeader({ session, overHero = false }: SiteHeaderProps) {
+export function SiteHeader({
+  session,
+  overHero = false,
+  floating = true,
+}: SiteHeaderProps) {
   const [solid, setSolid] = useState(!overHero);
 
   useEffect(() => {
@@ -54,9 +67,13 @@ export function SiteHeader({ session, overHero = false }: SiteHeaderProps) {
   return (
     <header
       className={cn(
-        "px-gutter py-header fixed inset-x-0 top-0 z-50 flex items-center justify-between",
+        "px-gutter py-header z-50 flex items-center justify-between",
+        floating ? "fixed inset-x-0 top-0" : "shrink-0",
         "ease-standard transition-colors duration-slow",
-        solid && "bg-background/95 border-border border-b backdrop-blur-sm",
+        // Sin línea inferior: lo que separa el header del contenido es la
+        // primera línea de la propia página (la barra de filtros del catálogo,
+        // p. ej.), que va pegada justo debajo.
+        solid && "bg-background/95 backdrop-blur-sm",
       )}
     >
       <Link
