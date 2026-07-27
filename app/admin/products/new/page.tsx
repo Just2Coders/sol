@@ -6,7 +6,7 @@ import { ProductForm } from "@/components/admin/product-form";
 export const metadata = { title: "Nuevo producto — Solaris Admin" };
 export const dynamic = "force-dynamic";
 
-export default async function NuevoProductoPage() {
+export default async function NewProductPage() {
   await verifyAdmin();
   const suppliers = await getSupplierOptions();
 
@@ -17,7 +17,7 @@ export default async function NuevoProductoPage() {
         <p className="text-muted-foreground">
           Necesitas al menos un proveedor.{" "}
           <Link
-            href="/admin/proveedores/nuevo"
+            href="/admin/suppliers/new"
             className="underline underline-offset-4"
           >
             Crea el primero

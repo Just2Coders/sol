@@ -25,10 +25,12 @@
 
 ```
 app/                    Presentación: rutas, páginas (RSC) y Server Actions
-  (auth)/               Grupo de rutas de autenticación (login, registro)
+  (auth)/               Grupo de rutas de autenticación (login, signup)
   actions/              Server Actions ("use server") — punto de entrada de mutaciones
-  admin/                Panel de administración (rol ADMIN): zonas, proveedores
-  cuenta/               Área del cliente autenticado
+  admin/                Panel de administración (rol ADMIN): zones, suppliers, products, kits
+  account/              Área del cliente autenticado
+  catalog/              Catálogo público
+  globals.css           Design system: roles de color/tipografía y su registro en Tailwind
 components/
   ui/                   Primitivos de shadcn/ui (button, input, card, ...)
   auth/                 Componentes de cliente por feature (formularios de auth)
@@ -142,7 +144,7 @@ verifica el Zelle manualmente y confirma, lo que hace avanzar la orden.
     cookie y manda a `/login` (un RSC no puede borrar cookies; solo Server
     Actions y Route Handlers).
 - **`proxy.ts`** (middleware de Next 16) hace un primer filtro por cookie para
-  `/admin` y `/cuenta`, pero **no** es la última línea de defensa: cada página
+  `/admin` y `/account`, pero **no** es la última línea de defensa: cada página
   protegida vuelve a llamar al DAL. Nunca confíes solo en el middleware.
 
 ## 7. Receta: añadir un módulo nuevo (p. ej. `orders`)

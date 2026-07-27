@@ -50,7 +50,7 @@ function parseSupplierForm(formData: FormData) {
 }
 
 function revalidateSuppliers() {
-  revalidatePath("/admin/proveedores");
+  revalidatePath("/admin/suppliers");
 }
 
 // Ignora zonas que ya no existan (p. ej. eliminadas con el formulario abierto)
@@ -100,7 +100,7 @@ export async function createSupplier(
   }
 
   revalidateSuppliers();
-  redirect("/admin/proveedores");
+  redirect("/admin/suppliers");
 }
 
 export async function updateSupplier(
@@ -181,5 +181,5 @@ export async function deleteSupplier(
   await db.delete(suppliers).where(eq(suppliers.id, id.data));
 
   revalidateSuppliers();
-  redirect("/admin/proveedores");
+  redirect("/admin/suppliers");
 }

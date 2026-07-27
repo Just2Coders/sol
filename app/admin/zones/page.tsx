@@ -13,7 +13,7 @@ import {
 export const metadata = { title: "Zonas — Solaris Admin" };
 export const dynamic = "force-dynamic";
 
-export default async function ZonasPage() {
+export default async function ZonesPage() {
   await verifyAdmin();
   const states = await getZoneTree();
 

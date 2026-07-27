@@ -5,7 +5,7 @@ import { SupplierForm } from "@/components/admin/supplier-form";
 export const metadata = { title: "Nuevo proveedor — Solaris Admin" };
 export const dynamic = "force-dynamic";
 
-export default async function NuevoProveedorPage() {
+export default async function NewSupplierPage() {
   await verifyAdmin();
   const zoneGroups = await getZoneOptions();
 

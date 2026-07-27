@@ -9,12 +9,12 @@ export const metadata = { title: "Crear cuenta — Solaris" };
 // requiera una base de datos viva para prerenderizar.
 export const dynamic = "force-dynamic";
 
-export default async function RegistroPage({
+export default async function SignupPage({
   searchParams,
 }: {
-  searchParams: Promise<{ desde?: string }>;
+  searchParams: Promise<{ from?: string }>;
 }) {
-  const redirectTo = safeInternalPath((await searchParams).desde) ?? undefined;
+  const redirectTo = safeInternalPath((await searchParams).from) ?? undefined;
   const zoneTree = await getZoneOptions();
 
   return (

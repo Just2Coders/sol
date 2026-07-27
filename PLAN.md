@@ -70,9 +70,9 @@ Decisiones clave:
 ### Etapa 2 — Autenticación (1 día) ✅
 - [x] Sesión JWT propia (`jose`) con credenciales (email + password) — no se usó Auth.js.
 - [x] Registro de clientes con selección de zona.
-- [x] Middleware (`proxy.ts`): `/admin/**` solo para rol `ADMIN`, `/cuenta/**` requiere sesión.
+- [x] Middleware (`proxy.ts`): `/admin/**` solo para rol `ADMIN`, `/account/**` requiere sesión.
 - [x] El catálogo es público; el login solo se exige al hacer checkout: el
-      middleware solo protege `/admin` y `/cuenta`, y el flujo `?desde=` devuelve
+      middleware solo protege `/admin` y `/account`, y el flujo `?from=` devuelve
       al usuario a la página de origen tras login o registro.
 
 ### Etapa 3 — Panel admin: proveedores y zonas (1–2 días) ✅

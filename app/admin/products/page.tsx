@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { verifyAdmin } from "@/lib/dal";
-import { getSuppliersWithZones } from "@/lib/suppliers/queries";
+import { getProductsWithSupplier } from "@/lib/products/queries";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -12,71 +12,69 @@ import {
   TableRow,
 } from "@/components/ui/table";
 
-export const metadata = { title: "Proveedores — Solaris Admin" };
+export const metadata = { title: "Productos — Solaris Admin" };
 export const dynamic = "force-dynamic";
 
-export default async function ProveedoresPage() {
+export default async function ProductsPage() {
   await verifyAdmin();
-  const suppliers = await getSuppliersWithZones();
+  const products = await getProductsWithSupplier();
 
   return (
     <div className="grid gap-6">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold">Proveedores</h1>
+          <h1 className="text-2xl font-semibold">Productos</h1>
           <p className="text-muted-foreground">
-            Los proveedores los registra el admin; no hay auto-registro.
+            Paneles, inversores, baterías y accesorios de cada proveedor.
           </p>
         </div>
         <Button asChild>
-          <Link href="/admin/proveedores/nuevo">Nuevo proveedor</Link>
+          <Link href="/admin/products/new">Nuevo producto</Link>
         </Button>
       </div>
 
-      {suppliers.length === 0 ? (
+      {products.length === 0 ? (
         <p className="text-muted-foreground">
-          Aún no hay proveedores. Crea el primero con «Nuevo proveedor».
+          Aún no hay productos. Crea el primero con «Nuevo producto».
         </p>
       ) : (
         <Table>
           <TableHeader>
             <TableRow>
               <TableHead>Nombre</TableHead>
-              <TableHead>Contacto</TableHead>
-              <TableHead>Cobertura</TableHead>
+              <TableHead>Proveedor</TableHead>
+              <TableHead className="text-right">Precio</TableHead>
+              <TableHead className="text-right">Stock</TableHead>
               <TableHead>Estado</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {suppliers.map((s) => (
-              <TableRow key={s.id}>
+            {products.map((p) => (
+              <TableRow key={p.id}>
                 <TableCell>
                   <Link
-                    href={`/admin/proveedores/${s.id}`}
+                    href={`/admin/products/${p.id}`}
                     className="font-medium underline-offset-4 hover:underline"
                   >
-                    {s.name}
+                    {p.name}
                   </Link>
                 </TableCell>
                 <TableCell className="text-muted-foreground">
-                  {[s.email, s.phone].filter(Boolean).join(" · ") || "—"}
+                  {p.supplierName}
                 </TableCell>
-                <TableCell>
-                  {s.zones.length === 0 ? (
-                    <span className="text-muted-foreground">Sin zonas</span>
+                <TableCell className="text-right tabular-nums">
+                  ${p.priceUsd.toFixed(2)}
+                </TableCell>
+                <TableCell className="text-right tabular-nums">
+                  {p.stock === 0 ? (
+                    <span className="text-destructive">Sin stock</span>
                   ) : (
-                    <div className="flex max-w-md flex-wrap gap-1">
-                      {s.zones.map((z) => (
-                        <Badge key={z.zoneId} variant="secondary">
-                          {z.zoneName}
-                        </Badge>
-                      ))}
-                    </div>
+                    p.stock
                   )}
                 </TableCell>
                 <TableCell>
-                  <Badge variant={s.active ? "default" : "outline"}>
-                    {s.active ? "Activo" : "Inactivo"}
+                  <Badge variant={p.active ? "default" : "outline"}>
+                    {p.active ? "Activo" : "Inactivo"}
                   </Badge>
                 </TableCell>
               </TableRow>

@@ -47,7 +47,7 @@ function parseProductForm(formData: FormData) {
 
 // El catálogo público (Etapa 5) también leerá productos: se añadirá aquí.
 function revalidateProducts() {
-  revalidatePath("/admin/productos");
+  revalidatePath("/admin/products");
   revalidatePath("/admin/kits");
 }
 
@@ -83,7 +83,7 @@ export async function createProduct(
   await db.insert(products).values({ ...data, slug });
 
   revalidateProducts();
-  redirect("/admin/productos");
+  redirect("/admin/products");
 }
 
 export async function updateProduct(
@@ -168,5 +168,5 @@ export async function deleteProduct(
   await db.delete(products).where(eq(products.id, id.data));
 
   revalidateProducts();
-  redirect("/admin/productos");
+  redirect("/admin/products");
 }

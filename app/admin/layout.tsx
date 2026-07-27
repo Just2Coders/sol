@@ -13,17 +13,17 @@ export default async function AdminLayout({ children }: { children: React.ReactN
             <Link href="/admin" className="font-semibold">
               Solaris Admin
             </Link>
-            <Link href="/admin/zonas" className="text-muted-foreground hover:text-foreground">
+            <Link href="/admin/zones" className="text-muted-foreground hover:text-foreground">
               Zonas
             </Link>
             <Link
-              href="/admin/proveedores"
+              href="/admin/suppliers"
               className="text-muted-foreground hover:text-foreground"
             >
               Proveedores
             </Link>
             <Link
-              href="/admin/productos"
+              href="/admin/products"
               className="text-muted-foreground hover:text-foreground"
             >
               Productos

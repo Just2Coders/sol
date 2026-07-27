@@ -10,7 +10,7 @@ import { KitForm } from "@/components/admin/kit-form";
 export const metadata = { title: "Editar kit — Solaris Admin" };
 export const dynamic = "force-dynamic";
 
-export default async function EditarKitPage({
+export default async function EditKitPage({
   params,
 }: {
   params: Promise<{ id: string }>;

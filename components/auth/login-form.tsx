@@ -50,7 +50,7 @@ export function LoginForm({ redirectTo }: { redirectTo?: string }) {
           <p className="text-sm text-muted-foreground">
             ¿No tienes cuenta?{" "}
             <Link
-              href={redirectTo ? `/registro?desde=${encodeURIComponent(redirectTo)}` : "/registro"}
+              href={redirectTo ? `/signup?from=${encodeURIComponent(redirectTo)}` : "/signup"}
               className="underline underline-offset-4 hover:text-foreground"
             >
               Regístrate

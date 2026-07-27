@@ -13,16 +13,14 @@ export const metadata = {
  * Existe para que los CTA "Explora los kits" del hero tengan destino real en
  * vez de un 404. Se reemplaza por el catálogo cuando llegue su etapa.
  */
-export default function CatalogoPage() {
+export default function CatalogPage() {
   return (
-    <main className="flex flex-1 flex-col items-center justify-center gap-6 px-[var(--space-section-x)] py-[var(--space-section-y-md)] text-center">
-      <span className="text-tinta-suave font-mono text-[length:var(--text-label-size)] tracking-[var(--text-label-tracking)]">
+    <main className="px-gutter py-section-md flex flex-1 flex-col items-center justify-center gap-6 text-center">
+      <span className="text-muted-foreground text-label font-mono">
         catálogo · en construcción
       </span>
-      <h1 className="max-w-[16ch] text-[length:var(--text-heading-1-size)] leading-[var(--text-heading-1-leading)] font-bold tracking-[var(--text-heading-1-tracking)]">
-        Estamos armando los kits.
-      </h1>
-      <p className="text-tinta-suave max-w-[50ch] text-[length:var(--text-body-size)] leading-[var(--text-body-leading)]">
+      <h1 className="text-heading-1 max-w-[16ch]">Estamos armando los kits.</h1>
+      <p className="text-muted-foreground text-body max-w-[50ch]">
         Muy pronto vas a poder comparar kits de distintos proveedores, ver
         cuántas horas de respaldo te da cada uno y coordinar la instalación en
         tu provincia.

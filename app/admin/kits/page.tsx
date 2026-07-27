@@ -29,7 +29,7 @@ export default async function KitsPage() {
           </p>
         </div>
         <Button asChild>
-          <Link href="/admin/kits/nuevo">Nuevo kit</Link>
+          <Link href="/admin/kits/new">Nuevo kit</Link>
         </Button>
       </div>
 

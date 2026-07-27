@@ -107,7 +107,7 @@ export function SignupForm({
           <p className="text-sm text-muted-foreground">
             ¿Ya tienes cuenta?{" "}
             <Link
-              href={redirectTo ? `/login?desde=${encodeURIComponent(redirectTo)}` : "/login"}
+              href={redirectTo ? `/login?from=${encodeURIComponent(redirectTo)}` : "/login"}
               className="underline underline-offset-4 hover:text-foreground"
             >
               Inicia sesión
