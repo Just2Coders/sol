@@ -1,0 +1,106 @@
+"use client";
+
+import Link from "next/link";
+import { useEffect, useState } from "react";
+
+import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
+import type { SessionPayload } from "@/lib/session";
+
+type SiteHeaderProps = {
+  session: SessionPayload | null;
+  /**
+   * La página abre con un hero a sangre: la barra nace transparente sobre la
+   * foto y se vuelve sólida al pasarlo. Sin esto nace sólida.
+   */
+  overHero?: boolean;
+};
+
+// Alto aproximado del header: sirve para decidir en qué punto exacto del
+// scroll la barra deja de flotar sobre la foto.
+const HEADER_HEIGHT = 96;
+
+/**
+ * Barra fija de la landing. Sobre el hero va transparente, como si formara
+ * parte de la foto; al pasar el hero se materializa en el fondo de página y sigue
+ * en pantalla el resto de la página — que es lo que cose la home en un solo
+ * documento en vez de dos.
+ *
+ * El cambio se dispara con el centinela (`data-hero-end`) que el hero deja al
+ * final de la foto.
+ */
+export function SiteHeader({ session, overHero = false }: SiteHeaderProps) {
+  const [solid, setSolid] = useState(!overHero);
+
+  useEffect(() => {
+    if (!overHero) return;
+
+    const sentinel = document.querySelector("[data-hero-end]");
+    if (!sentinel) return;
+
+    const observer = new IntersectionObserver(
+      ([entry]) => setSolid(entry.boundingClientRect.top <= HEADER_HEIGHT),
+      { rootMargin: `-${HEADER_HEIGHT}px 0px 0px 0px`, threshold: 0 },
+    );
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [overHero]);
+
+  const linkClass = cn(
+    "text-nav ease-standard hidden transition-colors duration-slow sm:block",
+    solid ? "text-muted-foreground hover:text-foreground" : "text-foreground-inverse/90 hover:text-foreground-inverse",
+  );
+
+  return (
+    <header
+      className={cn(
+        "px-gutter py-header fixed inset-x-0 top-0 z-50 flex items-center justify-between",
+        "ease-standard transition-colors duration-slow",
+        solid && "bg-background/95 border-border border-b backdrop-blur-sm",
+      )}
+    >
+      <Link
+        href="/"
+        className={cn(
+          "ease-standard transition-colors duration-slow",
+          solid ? "text-foreground hover:text-foreground" : "text-foreground-inverse hover:text-foreground-inverse",
+        )}
+      >
+        <span className="block text-xl font-bold tracking-[-0.01em]">solaris</span>
+        <span
+          className={cn(
+            "block font-mono text-[10px] tracking-[0.14em]",
+            solid ? "text-muted-foreground" : "text-foreground-inverse/75",
+          )}
+        >
+          energía · cuba
+        </span>
+      </Link>
+
+      <nav className="flex items-center gap-7">
+        <Link href="/catalog" className={linkClass}>
+          Kits
+        </Link>
+        {session ? (
+          <>
+            {session.role === "ADMIN" && (
+              <Link href="/admin" className={linkClass}>
+                Panel admin
+              </Link>
+            )}
+            <Link href="/account" className={linkClass}>
+              Mi cuenta
+            </Link>
+          </>
+        ) : (
+          <Link href="/login" className={linkClass}>
+            Iniciar sesión
+          </Link>
+        )}
+        <Button asChild>
+          <Link href="/catalog">Explora los kits</Link>
+        </Button>
+      </nav>
+    </header>
+  );
+}

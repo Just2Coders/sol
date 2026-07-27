@@ -25,8 +25,8 @@ const idSchema = z.uuid();
 
 // Rutas que muestran zonas: el admin y el selector de zona del registro.
 function revalidateZones() {
-  revalidatePath("/admin/zonas");
-  revalidatePath("/registro");
+  revalidatePath("/admin/zones");
+  revalidatePath("/signup");
 }
 
 export async function createZone(

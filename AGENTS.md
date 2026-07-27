@@ -32,8 +32,43 @@ de escribir código**. El plan de negocio y las fases están en [`PLAN.md`](PLAN
   última defensa. Cada página protegida vuelve a verificar vía `lib/dal.ts`.
 - **Migraciones:** al cambiar `schema.ts`, `npm run db:generate`, revisa el SQL y
   **commitéalo** junto al cambio. Nunca edites una migración ya aplicada.
-- **Idioma:** UI, mensajes y comentarios en español; identificadores de código en
-  inglés (como ya está el codebase).
+- **Idioma:** UI, mensajes y comentarios en español; **todo identificador en
+  inglés**: variables, componentes, tokens, y también **rutas, segmentos de URL
+  y query params** (`/catalog`, `/account`, `/admin/suppliers/new`, `?from=`).
+  Nunca crees una ruta en español. Ver el bloque de design system abajo.
+
+## Design system
+
+Todo vive en un solo archivo, [`app/globals.css`](app/globals.css): los roles con
+su valor en `:root`, y debajo un `@theme inline` que los registra como utilidades
+de Tailwind. Lo vigila `npm run check:tokens` (falla el CI si se rompe alguna de
+estas reglas; excepción puntual: comentario `check-design-tokens-ignore` en la
+línea).
+
+- **Los tokens son utilidades, nunca variables inline.** Cada token está
+  registrado en su namespace de Tailwind v4, así que en el markup se escribe
+  `text-display-1`, `px-gutter`, `duration-slow`, `ease-standard`, `shadow-md`,
+  `rounded-md`. **Prohibido** el valor arbitrario que envuelve una variable —la
+  forma `px-[ var(--token) ]` con corchetes—. Si te falta un valor, añade el
+  token al namespace correcto en `globals.css`; no lo llames inline.
+  _(Ojo al documentar: Tailwind escanea también los `.md`, así que un ejemplo de
+  esa forma escrito sin espacios acaba compilado como clase real.)_
+- **Un rol de texto ya trae tamaño, interlineado, tracking y peso.** No le
+  añadas `font-bold` ni `leading-*` encima salvo que quieras romperlo a
+  propósito.
+- **Espaciado:** la escala de 4px es la nativa de Tailwind (`p-4`, `gap-6`,
+  `mt-12`). En el theme solo viven las literales de layout del sketch
+  (`px-gutter`, `py-section-md`, `py-header`, `gap-grid`).
+- **Ningún nombre describe el color que tiene hoy.** Los roles son lo único que
+  ve el markup: `bg-background`, `text-foreground`, `text-muted-foreground`,
+  `bg-primary`, `text-primary-foreground`, `border-border`, `fill-support`,
+  `bg-canvas`, `text-foreground-inverse`, `text-emphasis`, `bg-muted`,
+  `ring-ring`, `text-success|warning|info`. Prohibido nombrar un token por su
+  tono (`terra`, `hueso`, `verde`) o en español, y prohibido escribir un hex o
+  una paleta cruda de Tailwind (`text-green-600`) fuera de `globals.css`.
+- **Para recolorear el proyecto** se editan los valores del `:root` y nada más:
+  ningún componente escribe un color. En el `@theme inline` no se escriben
+  valores nuevos, solo se apunta a un rol.
 
 ## Flujo de Git y Pull Requests
 

@@ -9,7 +9,7 @@ import { SupplierDeleteButton } from "@/components/admin/supplier-delete-button"
 export const metadata = { title: "Editar proveedor — Solaris Admin" };
 export const dynamic = "force-dynamic";
 
-export default async function EditarProveedorPage({
+export default async function EditSupplierPage({
   params,
 }: {
   params: Promise<{ id: string }>;

@@ -16,7 +16,7 @@ export function slugify(s: string): string {
 }
 
 // Acepta solo rutas internas ("/checkout", nunca "//evil.com" ni "https://...")
-// para usar valores de ?desde= como destino de redirección sin open redirect.
+// para usar valores de ?from= como destino de redirección sin open redirect.
 export function safeInternalPath(value: unknown): string | null {
   if (typeof value !== "string") return null;
   if (!value.startsWith("/") || value.startsWith("//") || value.includes("\\")) {

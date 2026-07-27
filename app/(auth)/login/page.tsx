@@ -6,9 +6,9 @@ export const metadata = { title: "Iniciar sesión — Solaris" };
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ desde?: string }>;
+  searchParams: Promise<{ from?: string }>;
 }) {
-  const redirectTo = safeInternalPath((await searchParams).desde) ?? undefined;
+  const redirectTo = safeInternalPath((await searchParams).from) ?? undefined;
 
   return (
     <main className="flex min-h-screen items-center justify-center p-4">

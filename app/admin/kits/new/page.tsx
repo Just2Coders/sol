@@ -6,7 +6,7 @@ import { KitForm } from "@/components/admin/kit-form";
 export const metadata = { title: "Nuevo kit — Solaris Admin" };
 export const dynamic = "force-dynamic";
 
-export default async function NuevoKitPage() {
+export default async function NewKitPage() {
   await verifyAdmin();
   const productsBySupplier = await getProductOptionsBySupplier();
 
@@ -17,7 +17,7 @@ export default async function NuevoKitPage() {
         <p className="text-muted-foreground">
           Un kit se arma con productos existentes.{" "}
           <Link
-            href="/admin/productos/nuevo"
+            href="/admin/products/new"
             className="underline underline-offset-4"
           >
             Crea el primero

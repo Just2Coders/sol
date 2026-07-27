@@ -1,4 +1,6 @@
 import { Hero } from "@/components/landing/hero";
+import { SiteHeader } from "@/components/landing/site-header";
+import { ZoneSelector } from "@/components/landing/zone-selector";
 import { getSession } from "@/lib/session";
 
 export default async function Home() {
@@ -6,7 +8,9 @@ export default async function Home() {
 
   return (
     <main className="flex-1">
-      <Hero session={session} />
+      <SiteHeader session={session} overHero />
+      <Hero />
+      <ZoneSelector />
     </main>
   );
 }

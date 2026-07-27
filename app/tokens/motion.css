@@ -1,8 +1,0 @@
-:root{
-  /* transiciones cortas y calmadas — nunca springs ni bounces; el tono es sereno */
-  --ease-standard:cubic-bezier(.4,0,.2,1); /* @kind other */
-  --ease-out:cubic-bezier(0,0,.2,1); /* @kind other */
-  --duration-fast:120ms; /* @kind other */
-  --duration-base:180ms; /* @kind other */
-  --duration-slow:280ms; /* @kind other */
-}

@@ -34,7 +34,7 @@ export const getCurrentUser = cache(async () => {
 
   // Sesión huérfana: cookie válida pero el usuario ya no existe (p. ej. cuenta
   // eliminada). Sin esto el usuario queda atrapado: proxy.ts lo trata como
-  // logueado y le bloquea /login y /registro hasta que expire la cookie.
+  // logueado y le bloquea /login y /signup hasta que expire la cookie.
   if (!user) redirect("/api/auth/logout");
 
   return user;

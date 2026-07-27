@@ -11,7 +11,7 @@ import { ProductForm } from "@/components/admin/product-form";
 export const metadata = { title: "Editar producto — Solaris Admin" };
 export const dynamic = "force-dynamic";
 
-export default async function EditarProductoPage({
+export default async function EditProductPage({
   params,
 }: {
   params: Promise<{ id: string }>;

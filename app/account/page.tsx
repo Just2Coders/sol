@@ -12,7 +12,7 @@ import {
 
 export const metadata = { title: "Mi cuenta — Solaris" };
 
-export default async function CuentaPage() {
+export default async function AccountPage() {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
 

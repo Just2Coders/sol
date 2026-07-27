@@ -11,17 +11,17 @@ export const metadata = { title: "Panel admin — Solaris" };
 
 const SECTIONS = [
   {
-    href: "/admin/zonas",
+    href: "/admin/zones",
     title: "Zonas",
     description: "Estados y ciudades donde opera la plataforma.",
   },
   {
-    href: "/admin/proveedores",
+    href: "/admin/suppliers",
     title: "Proveedores",
     description: "Datos de contacto, liquidación y zonas de cobertura.",
   },
   {
-    href: "/admin/productos",
+    href: "/admin/products",
     title: "Productos",
     description: "Paneles, inversores y baterías: precio, stock y ficha técnica.",
   },
