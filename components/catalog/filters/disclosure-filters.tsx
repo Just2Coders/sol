@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { ChevronDown } from "lucide-react";
+import { ChevronDown } from "reicon-react";
 
 import { Button } from "@/components/ui/button";
 import { hasNarrowingFilters } from "@/lib/catalog/filters";

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { SlidersHorizontal } from "lucide-react";
+import { Filter } from "reicon-react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -81,7 +81,7 @@ export function SheetFilters({
         <Sheet open={open} onOpenChange={setOpen}>
           <SheetTrigger asChild>
             <Button variant="outline">
-              <SlidersHorizontal />
+              <Filter aria-hidden />
               Filtros
               {active > 0 && (
                 <span className="bg-primary text-primary-foreground text-marginalia ml-1 rounded-md px-1.5 font-mono">

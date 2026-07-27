@@ -1,5 +1,5 @@
 import Image from "next/image";
-import { Sun } from "lucide-react";
+import { Sun2 } from "reicon-react";
 
 import { cn } from "@/lib/utils";
 
@@ -39,7 +39,7 @@ export function CatalogMedia({
           className,
         )}
       >
-        <Sun className="text-support-strong size-8" strokeWidth={1.25} />
+        <Sun2 aria-hidden className="text-support-strong size-8" />
       </div>
     );
   }
