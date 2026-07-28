@@ -1,4 +1,5 @@
 import { Hero } from "@/components/landing/hero";
+import { KitComparison } from "@/components/landing/kit-comparison";
 import { SiteHeader } from "@/components/landing/site-header";
 import { ZoneSelector } from "@/components/landing/zone-selector";
 import { getSession } from "@/lib/session";
@@ -11,6 +12,7 @@ export default async function Home() {
       <SiteHeader session={session} overHero />
       <Hero />
       <ZoneSelector />
+      <KitComparison />
     </main>
   );
 }
