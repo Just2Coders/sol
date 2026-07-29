@@ -16,6 +16,15 @@ import { Input } from "@/components/ui/input";
  * Se admite además pegar una URL externa: útil mientras el store no está
  * configurado y para imágenes ya alojadas en otro sitio.
  */
+/**
+ * Prefijo de la clave en el store. Blob no tiene carpetas de verdad —el store
+ * es plano y la barra solo es parte del nombre—, pero el panel de Vercel las
+ * pinta como un árbol y `list({ mode: "folded" })` las recorre. Es un union
+ * cerrado a propósito: el prefijo queda grabado en URLs inmutables que van a la
+ * BD, así que un typo aquí no se arregla luego sin migrar ficheros y filas.
+ */
+export type BlobFolder = "products" | "kits";
+
 export function ImageUploader({
   name = "images",
   folder,
@@ -23,8 +32,7 @@ export function ImageUploader({
   max = 10,
 }: {
   name?: string;
-  /** Carpeta lógica dentro del store: "productos", "kits"... */
-  folder: string;
+  folder: BlobFolder;
   defaultUrls?: string[];
   max?: number;
 }) {

@@ -144,7 +144,7 @@ export function ProductForm({
           </div>
           <div className="grid gap-2 sm:col-span-2">
             <Label>Imágenes</Label>
-            <ImageUploader folder="productos" defaultUrls={product?.images} />
+            <ImageUploader folder="products" defaultUrls={product?.images} />
             <FieldError state={state} field="images" />
           </div>
           <div className="flex items-center gap-2 sm:col-span-2">
