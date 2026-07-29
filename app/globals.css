@@ -33,6 +33,13 @@
   --primary-active: #732f14;
   --primary-disabled: #d9b49d;
 
+  /* acción hipersaturada: el mismo rol de acción, pero a un volumen que puede
+     sostener una página entera de neutros. Solo lo usa una exploración de
+     landing (app/design/workshop), donde el acento es lo único cromático. */
+  --primary-loud: #f55b1c;
+  --primary-loud-foreground: #faf6ec;
+  --primary-loud-hover: #d94a12;
+
   /* superficie cálida de apoyo (chips, bandas secundarias) */
   --secondary: #d8be97;
   --secondary-foreground: #2b2a24;
@@ -127,6 +134,9 @@
   --color-primary-hover: var(--primary-hover);
   --color-primary-active: var(--primary-active);
   --color-primary-disabled: var(--primary-disabled);
+  --color-primary-loud: var(--primary-loud);
+  --color-primary-loud-foreground: var(--primary-loud-foreground);
+  --color-primary-loud-hover: var(--primary-loud-hover);
   --color-secondary: var(--secondary);
   --color-secondary-foreground: var(--secondary-foreground);
 
@@ -192,6 +202,23 @@
   --text-display-2--line-height: 1.05;
   --text-display-2--letter-spacing: -0.03em;
   --text-display-2--font-weight: 700;
+  /* Dos peldaños entre display-2 y heading-1: los usan las exploraciones de
+     landing que fijan TODOS sus titulares de sección a un solo tamaño menor
+     que el hero, en vez de correr toda la escala hacia arriba. */
+  --text-display-3: clamp(32px, 3.4vw, 44px);
+  --text-display-3--line-height: 1.08;
+  --text-display-3--letter-spacing: -0.02em;
+  --text-display-3--font-weight: 700;
+  --text-display-4: clamp(30px, 3vw, 40px);
+  --text-display-4--line-height: 1.1;
+  --text-display-4--letter-spacing: -0.02em;
+  --text-display-4--font-weight: 700;
+  /* La marca dibujada a sangre, recortada por los dos bordes del viewport: no
+     es un titular, es grafismo, y por eso mide en vw y no en px. */
+  --text-wordmark: 21vw;
+  --text-wordmark--line-height: 0.78;
+  --text-wordmark--letter-spacing: -0.04em;
+  --text-wordmark--font-weight: 800;
   --text-heading-1: 32px;
   --text-heading-1--line-height: 1.15;
   --text-heading-1--letter-spacing: -0.02em;
@@ -226,6 +253,17 @@
   --text-button--font-weight: 500;
   --text-nav: 14px;
   --text-nav--font-weight: 500;
+
+  /* Tracking suelto. Los roles de texto ya traen el suyo; estas utilidades
+     existen para las piezas que lo rompen a propósito — una etiqueta en caja
+     alta, un nombre de producto espaciado, un rótulo mono apretado. */
+  --tracking-display: -0.03em;
+  --tracking-heading: -0.01em;
+  --tracking-mono-tight: -0.02em;
+  --tracking-mono: 0.12em;
+  --tracking-mono-mid: 0.18em;
+  --tracking-mono-loud: 0.2em;
+  --tracking-mono-vast: 0.6em;
 
   /* Espaciado: la escala de 4px es la nativa de Tailwind (p-4 = 16px). Aquí
      solo las literales de layout del sketch, que no caen en esa grilla. */
