@@ -7,6 +7,7 @@ import {
   type ProductFormState,
 } from "@/app/actions/products";
 import { FieldError } from "@/components/admin/field-error";
+import { ImageUploader } from "@/components/admin/image-uploader";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -39,8 +40,7 @@ export type ProductDefaults = {
   specsText: string;
   priceUsd: number;
   stock: number;
-  /** Una URL por línea. */
-  imagesText: string;
+  images: string[];
   active: boolean;
 };
 
@@ -143,17 +143,8 @@ export function ProductForm({
             <FieldError state={state} field="specs" />
           </div>
           <div className="grid gap-2 sm:col-span-2">
-            <Label htmlFor="images">Imágenes</Label>
-            <Textarea
-              id="images"
-              name="images"
-              rows={3}
-              defaultValue={product?.imagesText ?? ""}
-              placeholder={"https://.../panel-frente.jpg\nhttps://.../panel-detalle.jpg"}
-            />
-            <p className="text-sm text-muted-foreground">
-              Una URL por línea (máximo 10). La subida de archivos llega más adelante.
-            </p>
+            <Label>Imágenes</Label>
+            <ImageUploader folder="productos" defaultUrls={product?.images} />
             <FieldError state={state} field="images" />
           </div>
           <div className="flex items-center gap-2 sm:col-span-2">

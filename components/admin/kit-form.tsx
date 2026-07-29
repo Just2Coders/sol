@@ -3,6 +3,7 @@
 import { useActionState, useState } from "react";
 import { createKit, updateKit, type KitFormState } from "@/app/actions/kits";
 import { FieldError } from "@/components/admin/field-error";
+import { ImageUploader } from "@/components/admin/image-uploader";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -43,8 +44,7 @@ export type KitDefaults = {
   name: string;
   description: string | null;
   priceUsd: number;
-  /** Una URL por línea. */
-  imagesText: string;
+  images: string[];
   active: boolean;
   items: { productId: string; quantity: number }[];
 };
@@ -135,17 +135,8 @@ export function KitForm({
             />
           </div>
           <div className="grid gap-2 sm:col-span-2">
-            <Label htmlFor="images">Imágenes</Label>
-            <Textarea
-              id="images"
-              name="images"
-              rows={3}
-              defaultValue={kit?.imagesText ?? ""}
-              placeholder={"https://.../kit-3kw.jpg"}
-            />
-            <p className="text-sm text-muted-foreground">
-              Una URL por línea (máximo 10).
-            </p>
+            <Label>Imágenes</Label>
+            <ImageUploader folder="kits" defaultUrls={kit?.images} />
             <FieldError state={state} field="images" />
           </div>
           <div className="flex items-center gap-2 sm:col-span-2">

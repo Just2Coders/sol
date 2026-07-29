@@ -7,11 +7,12 @@ import * as z from "zod";
 import { db } from "@/lib/db";
 import { kitItems, products, suppliers } from "@/lib/db/schema";
 import { verifyAdmin } from "@/lib/dal";
+import { deleteBlobs, removedImages } from "@/lib/blob";
 import {
   idSchema,
   imageUrlsSchema,
   optionalText,
-  parseLines,
+  parseValues,
   priceUsdSchema,
   quantitySchema,
   specsSchema,
@@ -40,7 +41,7 @@ function parseProductForm(formData: FormData) {
     specs: formData.get("specs") ?? "",
     priceUsd: formData.get("priceUsd"),
     stock: formData.get("stock"),
-    images: parseLines(formData.get("images")),
+    images: parseValues(formData.getAll("images")),
     active: formData.get("active") === "on",
   });
 }
@@ -140,6 +141,9 @@ export async function updateProduct(
     .set({ ...data, slug, updatedAt: new Date() })
     .where(eq(products.id, id.data));
 
+  // Las imágenes que el admin quitó del formulario ya no las referencia nadie.
+  await deleteBlobs(removedImages(current.images, data.images));
+
   revalidateProducts();
   return { success: true };
 }
@@ -163,9 +167,14 @@ export async function deleteProduct(
     };
   }
 
+  const product = await db.query.products.findFirst({
+    where: eq(products.id, id.data),
+  });
+
   // Las órdenes no lo referencian con FK: `order_items` guarda snapshot de
   // nombre y precio, así que el historial de compras se conserva intacto.
   await db.delete(products).where(eq(products.id, id.data));
+  await deleteBlobs(product?.images ?? []);
 
   revalidateProducts();
   redirect("/admin/products");

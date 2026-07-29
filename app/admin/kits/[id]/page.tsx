@@ -51,7 +51,7 @@ export default async function EditKitPage({
           name: kit.name,
           description: kit.description,
           priceUsd: kit.priceUsd,
-          imagesText: kit.images.join("\n"),
+          images: kit.images,
           active: kit.active,
           items: kit.items.map((item) => ({
             productId: item.productId,

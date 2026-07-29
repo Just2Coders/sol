@@ -47,7 +47,7 @@ export default async function EditProductPage({
           specsText: specsToText(product.specs),
           priceUsd: product.priceUsd,
           stock: product.stock,
-          imagesText: product.images.join("\n"),
+          images: product.images,
           active: product.active,
         }}
         suppliers={suppliers}
