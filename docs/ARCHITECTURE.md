@@ -20,6 +20,7 @@
 | Validación | **Zod** v4 |
 | Auth | Sesión propia por **JWT** (`jose`) en cookie httpOnly + `bcryptjs` |
 | UI | **shadcn/ui** (Radix) + Tailwind CSS v4 |
+| Estado de cliente | **Zustand** — solo el carrito; el resto vive en la URL o en el servidor |
 
 ## 2. Estructura de carpetas
 
@@ -37,7 +38,11 @@ components/
   admin/                Componentes de cliente del panel admin (formularios CRUD)
   landing/              Home: hero, mapa de provincias, barra del sitio
   catalog/              Catálogo público: filtros, tarjeta, galería, panel de compra
+  cart/                 Carrito: botón de la ficha y panel lateral del header
 lib/                    Lógica de servidor reutilizable (NO específica de una ruta)
+  cart/
+    lines.ts            El carrito como dato puro: la línea y sus sumas
+    store.ts            El store de zustand, persistido en localStorage
   db/
     schema.ts           Definición de tablas y relaciones Drizzle (fuente del modelo)
     index.ts            Cliente `db` (Neon + Drizzle)
@@ -112,6 +117,30 @@ resolviendo en el servidor. La única preferencia que además se recuerda es la
 zona, en una cookie httpOnly (`lib/zones/preference.ts`), que se escribe desde
 la Action `selectZone` — y se borra cuando el visitante quita el filtro, o
 volvería a aparecer sola en la siguiente visita.
+
+### El carrito es la excepción: vive en el cliente
+
+Es el único estado de la app que no está ni en la URL ni en el servidor. Hasta
+el checkout no hay nada que guardar —ni orden, ni sesión obligatoria—, así que
+armarlo es trabajo del navegador y el catálogo se sigue sirviendo sin sesión.
+La única huella es `localStorage`, para que cerrar la pestaña no borre lo
+elegido.
+
+- `lib/cart/lines.ts` — el dato puro: qué es una línea y cómo se suma. No
+  depende de zustand ni del navegador, así que lo importan los dos lados (igual
+  que `lib/catalog/filters.ts`).
+- `lib/cart/store.ts` — el store (`"use client"`) con el middleware `persist`.
+  Impone la regla de **un solo proveedor por carrito**: `add` rechaza un item
+  de otro y devuelve el motivo para que la ficha lo explique.
+
+Lo que se guarda es una **foto** de la ficha (nombre, precio, stock del
+momento) para poder pintar el panel sin volver al servidor. Nunca se cobra
+desde ahí: la Server Action del checkout vuelve a leer el catálogo y son sus
+valores los que se copian a `order_items` (§4, snapshots).
+
+Como el HTML lo pinta el servidor, que no tiene `localStorage`, todo lector del
+carrito pasa por `useCartLines()`: devuelve vacío hasta que la lectura termina,
+de modo que la pintada con la que React hidrata coincide con la del servidor.
 
 ## 4. Modelo de datos (resumen)
 
