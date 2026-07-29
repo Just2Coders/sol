@@ -72,7 +72,17 @@ export default async function ProductPage({ params }: ProductPageProps) {
 
           <div className="mt-8">
             <CatalogPurchasePanel
-              priceUsd={product.priceUsd}
+              item={{
+                type: "PRODUCT",
+                id: product.id,
+                slug: product.slug,
+                name: product.name,
+                priceUsd: product.priceUsd,
+                image: product.images[0] ?? null,
+                supplierSlug: product.supplier.slug,
+                supplierName: product.supplier.name,
+                stock: product.stock,
+              }}
               supplier={product.supplier}
               note={
                 product.stock > 0 ? (

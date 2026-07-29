@@ -58,8 +58,8 @@ Decisiones clave:
 
 ### Etapa 0 — Fundaciones (½ día) ✅
 - [x] `create-next-app` con TypeScript, Tailwind, App Router; instalar shadcn/ui.
-- [ ] Repo en GitHub + proyecto en Vercel conectado (deploy automático desde el inicio).
-- [ ] Crear proyecto en Neon con ramas `dev` y `prod`; variables de entorno en `.env.local` y Vercel.
+- [x] Repo en GitHub + proyecto en Vercel conectado (deploy automático desde el inicio).
+- [x] Crear proyecto en Neon con ramas `dev` y `prod`; variables de entorno en `.env.local` y Vercel.
 - [x] Instalar Drizzle + `drizzle-kit`, configurar conexión y primera migración de prueba.
 
 ### Etapa 1 — Esquema de datos (1 día) ✅
@@ -102,8 +102,14 @@ Decisiones clave:
 - [x] SEO básico: metadata, slugs limpios, Open Graph.
 
 ### Etapa 6 — Carrito y checkout (2 días)
-- [ ] Carrito client-side (Context o Zustand) persistido en localStorage.
+- [x] Carrito client-side (Zustand) persistido en localStorage.
+      *`lib/cart/lines.ts` (el dato puro, importable desde servidor) +
+      `lib/cart/store.ts` (el store con `persist`). La UI es el botón de la
+      ficha y el panel lateral del header.*
 - [ ] Regla de un solo proveedor por carrito, con aviso claro al usuario.
+      *El store ya la impone —`add` rechaza un item de otro proveedor— y la
+      ficha lo explica con el atajo para vaciar el carrito. Queda repasar el
+      aviso cuando exista el checkout.*
 - [ ] Checkout: resumen, datos de contacto/entrega, confirmación → crea orden `PENDING_PAYMENT`.
 - [ ] Página "Mis órdenes" en la cuenta del usuario, con estado en tiempo real.
 

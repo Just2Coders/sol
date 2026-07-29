@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 
+import { CartPanel } from "@/components/cart/cart-panel";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { SessionPayload } from "@/lib/session";
@@ -59,9 +60,15 @@ export function SiteHeader({
     return () => observer.disconnect();
   }, [overHero]);
 
+  // El color del chrome de la barra: lo comparten los enlaces y el carrito, que
+  // a diferencia de ellos no se esconde en móvil — es la salida del catálogo.
+  const chromeClass = solid
+    ? "text-muted-foreground hover:text-foreground"
+    : "text-foreground-inverse/90 hover:text-foreground-inverse";
+
   const linkClass = cn(
     "text-nav ease-standard hidden transition-colors duration-slow sm:block",
-    solid ? "text-muted-foreground hover:text-foreground" : "text-foreground-inverse/90 hover:text-foreground-inverse",
+    chromeClass,
   );
 
   return (
@@ -114,6 +121,7 @@ export function SiteHeader({
             Iniciar sesión
           </Link>
         )}
+        <CartPanel className={chromeClass} />
         <Button asChild>
           <Link href="/catalog">Explora los kits</Link>
         </Button>

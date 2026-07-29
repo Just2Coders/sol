@@ -76,7 +76,18 @@ export default async function KitPage({ params }: KitPageProps) {
 
           <div className="mt-8">
             <CatalogPurchasePanel
-              priceUsd={kit.priceUsd}
+              item={{
+                type: "KIT",
+                id: kit.id,
+                slug: kit.slug,
+                name: kit.name,
+                priceUsd: kit.priceUsd,
+                image: kit.images[0] ?? null,
+                supplierSlug: kit.supplier.slug,
+                supplierName: kit.supplier.name,
+                // Un kit no lleva stock propio: se arma con lo que haya.
+                stock: null,
+              }}
               supplier={kit.supplier}
               note={
                 kit.savingsUsd > 0 ? (
