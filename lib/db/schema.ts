@@ -1,6 +1,7 @@
 import { relations } from "drizzle-orm";
 import {
   boolean,
+  index,
   integer,
   jsonb,
   numeric,
@@ -12,6 +13,13 @@ import {
   uuid,
   type AnyPgColumn,
 } from "drizzle-orm/pg-core";
+
+/**
+ * Nota sobre índices: Postgres **no** indexa una foreign key por el hecho de
+ * serlo — solo la clave primaria y los `unique`. Cada índice declarado aquí
+ * abajo cubre un camino de lectura que existe hoy en el código; si uno deja de
+ * usarse, se borra (un índice de más encarece cada escritura).
+ */
 
 // ─── Enums ───────────────────────────────────────────────────────────────────
 
@@ -39,13 +47,19 @@ export const orderItemType = pgEnum("order_item_type", ["PRODUCT", "KIT"]);
 // ─── Zonas ───────────────────────────────────────────────────────────────────
 // Jerarquía simple: estado (parentId null) → ciudad/municipio (parentId = estado).
 
-export const zones = pgTable("zones", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  name: text("name").notNull(),
-  slug: text("slug").notNull().unique(),
-  parentId: uuid("parent_id").references((): AnyPgColumn => zones.id),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
+export const zones = pgTable(
+  "zones",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    name: text("name").notNull(),
+    slug: text("slug").notNull().unique(),
+    parentId: uuid("parent_id").references((): AnyPgColumn => zones.id),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  // Toda lectura de la jerarquía baja por aquí: el árbol del admin, el selector
+  // del registro y el ámbito del catálogo (provincia + sus municipios).
+  (t) => [index("zones_parent_id_idx").on(t.parentId)],
+);
 
 // ─── Usuarios ────────────────────────────────────────────────────────────────
 
@@ -86,43 +100,66 @@ export const supplierZones = pgTable(
       .notNull()
       .references(() => zones.id, { onDelete: "cascade" }),
   },
-  (t) => [primaryKey({ columns: [t.supplierId, t.zoneId] })],
+  (t) => [
+    primaryKey({ columns: [t.supplierId, t.zoneId] }),
+    // El PK ya sirve "qué zonas cubre este proveedor". El catálogo pregunta lo
+    // contrario —"qué proveedores llegan a esta zona"— y con la clave compuesta
+    // en ese orden Postgres no puede usarla.
+    index("supplier_zones_zone_id_idx").on(t.zoneId),
+  ],
 );
 
 // ─── Productos y kits ────────────────────────────────────────────────────────
 
-export const products = pgTable("products", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  supplierId: uuid("supplier_id")
-    .notNull()
-    .references(() => suppliers.id, { onDelete: "cascade" }),
-  name: text("name").notNull(),
-  slug: text("slug").notNull().unique(),
-  description: text("description"),
-  // Ficha técnica flexible: { potencia: "450W", voltaje: "24V", ... }
-  specs: jsonb("specs").$type<Record<string, string>>().notNull().default({}),
-  priceUsd: numeric("price_usd", { precision: 10, scale: 2, mode: "number" }).notNull(),
-  stock: integer("stock").notNull().default(0),
-  images: text("images").array().notNull().default([]),
-  active: boolean("active").notNull().default(true),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-});
+export const products = pgTable(
+  "products",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    supplierId: uuid("supplier_id")
+      .notNull()
+      .references(() => suppliers.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    slug: text("slug").notNull().unique(),
+    description: text("description"),
+    // Ficha técnica flexible: { potencia: "450W", voltaje: "24V", ... }
+    specs: jsonb("specs").$type<Record<string, string>>().notNull().default({}),
+    priceUsd: numeric("price_usd", { precision: 10, scale: 2, mode: "number" }).notNull(),
+    stock: integer("stock").notNull().default(0),
+    images: text("images").array().notNull().default([]),
+    active: boolean("active").notNull().default(true),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    // El catálogo entra siempre por proveedor + activo, y el admin lista por
+    // proveedor: el mismo índice sirve a los dos.
+    index("products_supplier_id_active_idx").on(t.supplierId, t.active),
+    // El orden por precio y el filtro de rango se resuelven con este.
+    index("products_price_usd_idx").on(t.priceUsd),
+  ],
+);
 
-export const kits = pgTable("kits", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  supplierId: uuid("supplier_id")
-    .notNull()
-    .references(() => suppliers.id, { onDelete: "cascade" }),
-  name: text("name").notNull(),
-  slug: text("slug").notNull().unique(),
-  description: text("description"),
-  // Precio propio del kit (normalmente menor que la suma de sus productos).
-  priceUsd: numeric("price_usd", { precision: 10, scale: 2, mode: "number" }).notNull(),
-  images: text("images").array().notNull().default([]),
-  active: boolean("active").notNull().default(true),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
+export const kits = pgTable(
+  "kits",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    supplierId: uuid("supplier_id")
+      .notNull()
+      .references(() => suppliers.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    slug: text("slug").notNull().unique(),
+    description: text("description"),
+    // Precio propio del kit (normalmente menor que la suma de sus productos).
+    priceUsd: numeric("price_usd", { precision: 10, scale: 2, mode: "number" }).notNull(),
+    images: text("images").array().notNull().default([]),
+    active: boolean("active").notNull().default(true),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("kits_supplier_id_active_idx").on(t.supplierId, t.active),
+    index("kits_price_usd_idx").on(t.priceUsd),
+  ],
+);
 
 export const kitItems = pgTable(
   "kit_items",
@@ -135,7 +172,12 @@ export const kitItems = pgTable(
       .references(() => products.id, { onDelete: "cascade" }),
     quantity: integer("quantity").notNull().default(1),
   },
-  (t) => [primaryKey({ columns: [t.kitId, t.productId] })],
+  (t) => [
+    primaryKey({ columns: [t.kitId, t.productId] }),
+    // El PK cubre "las piezas de este kit". Falta el reverso: "en qué kits
+    // entra este producto", que es lo que mira el borrado de un producto.
+    index("kit_items_product_id_idx").on(t.productId),
+  ],
 );
 
 // ─── Órdenes ─────────────────────────────────────────────────────────────────

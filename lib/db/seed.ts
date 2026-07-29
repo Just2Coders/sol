@@ -2,6 +2,7 @@ import "dotenv/config";
 import { randomBytes } from "node:crypto";
 import bcrypt from "bcryptjs";
 import { eq } from "drizzle-orm";
+import { slugify } from "../utils";
 import { db } from "./index";
 import {
   kitItems,
@@ -23,14 +24,6 @@ const ZONE_TREE: Record<string, string[]> = {
 };
 
 const ADMIN_EMAIL = "cesarfpna@gmail.com";
-
-const slugify = (s: string) =>
-  s
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/(^-|-$)/g, "");
 
 async function main() {
   // ── Zonas ──

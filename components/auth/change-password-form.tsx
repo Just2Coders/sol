@@ -47,7 +47,7 @@ export function ChangePasswordForm() {
             )}
           </div>
           {state?.message === "ok" && (
-            <p className="text-sm text-green-600">Contraseña actualizada correctamente.</p>
+            <p className="text-success text-sm">Contraseña actualizada correctamente.</p>
           )}
         </CardContent>
         <CardFooter className="mt-6">

@@ -20,27 +20,45 @@
 | Validación | **Zod** v4 |
 | Auth | Sesión propia por **JWT** (`jose`) en cookie httpOnly + `bcryptjs` |
 | UI | **shadcn/ui** (Radix) + Tailwind CSS v4 |
+| Estado de cliente | **Zustand** — solo el carrito; el resto vive en la URL o en el servidor |
 
 ## 2. Estructura de carpetas
 
 ```
 app/                    Presentación: rutas, páginas (RSC) y Server Actions
-  (auth)/               Grupo de rutas de autenticación (login, registro)
+  (auth)/               Grupo de rutas de autenticación (login, signup)
   actions/              Server Actions ("use server") — punto de entrada de mutaciones
-  admin/                Panel de administración (rol ADMIN)
-  cuenta/               Área del cliente autenticado
+  admin/                Panel de administración (rol ADMIN): zones, suppliers, products, kits
+  account/              Área del cliente autenticado
+  catalog/              Catálogo público: listado, /products/[slug], /kits/[slug]
+  globals.css           Design system: roles de color/tipografía y su registro en Tailwind
 components/
   ui/                   Primitivos de shadcn/ui (button, input, card, ...)
   auth/                 Componentes de cliente por feature (formularios de auth)
+  admin/                Componentes de cliente del panel admin (formularios CRUD)
+  landing/              Home: hero, mapa de provincias, barra del sitio
+  catalog/              Catálogo público: filtros, tarjeta, galería, panel de compra
+  cart/                 Carrito: botón de la ficha y panel lateral del header
 lib/                    Lógica de servidor reutilizable (NO específica de una ruta)
+  cart/
+    lines.ts            El carrito como dato puro: la línea y sus sumas
+    store.ts            El store de zustand, persistido en localStorage
   db/
     schema.ts           Definición de tablas y relaciones Drizzle (fuente del modelo)
     index.ts            Cliente `db` (Neon + Drizzle)
     seed.ts             Datos iniciales (zonas, admin, proveedor demo)
     migrations/         SQL generado por drizzle-kit (versionado en git)
+  catalog/
+    filters.ts          Los filtros del catálogo tal como viven en la URL (puro)
+    queries.ts          Lecturas del catálogo público (solo activo, por zona)
+  products/queries.ts   Lecturas de productos (panel admin)
+  kits/queries.ts       Lecturas de kits con sus componentes (panel admin)
+  zones/queries.ts      Lecturas de zonas (jerarquía estado → ciudad)
+  zones/preference.ts   Cookie con la zona que eligió el visitante
+  suppliers/queries.ts  Lecturas de proveedores (con zonas de cobertura)
   session.ts            Emisión/lectura/borrado de la cookie de sesión JWT
   dal.ts                Data Access Layer: verificación de sesión + lectura de usuario
-  utils.ts              Helpers de UI (cn, etc.)
+  utils.ts              Helpers compartidos (cn, slugify, safeInternalPath)
 proxy.ts                Middleware de Next 16 (protección de rutas por cookie)
 docs/                   Documentación (este archivo)
 ```
@@ -78,6 +96,51 @@ Reglas concretas:
 > (p. ej. órdenes con su máquina de estados), extraemos su lógica a un
 > **service** en `lib/<módulo>/` y la Action pasa a ser una capa fina que llama
 > al service. Ver la receta en la sección 7.
+
+### Lecturas públicas vs. lecturas del panel
+
+Un mismo dato se lee distinto según quién mire, así que cada uno tiene su
+módulo en vez de una query con banderas:
+
+- `lib/products/queries.ts` y `lib/kits/queries.ts` sirven al **admin**: lo ven
+  todo, activo o no.
+- `lib/catalog/queries.ts` sirve al **catálogo público**: solo items activos de
+  proveedores activos, filtrados por la zona donde el visitante instala, y con
+  kits y productos unificados en un mismo tipo (`CatalogItem`) para que la
+  grilla no sepa de qué tabla viene cada tarjeta. Nunca expone datos internos
+  del proveedor (`payoutInfo`, teléfono, notas).
+
+Los filtros del catálogo viven en la **URL**, no en estado de cliente
+(`lib/catalog/filters.ts` los traduce en ambos sentidos): así una búsqueda se
+comparte, el botón atrás deshace filtro a filtro y la página se sigue
+resolviendo en el servidor. La única preferencia que además se recuerda es la
+zona, en una cookie httpOnly (`lib/zones/preference.ts`), que se escribe desde
+la Action `selectZone` — y se borra cuando el visitante quita el filtro, o
+volvería a aparecer sola en la siguiente visita.
+
+### El carrito es la excepción: vive en el cliente
+
+Es el único estado de la app que no está ni en la URL ni en el servidor. Hasta
+el checkout no hay nada que guardar —ni orden, ni sesión obligatoria—, así que
+armarlo es trabajo del navegador y el catálogo se sigue sirviendo sin sesión.
+La única huella es `localStorage`, para que cerrar la pestaña no borre lo
+elegido.
+
+- `lib/cart/lines.ts` — el dato puro: qué es una línea y cómo se suma. No
+  depende de zustand ni del navegador, así que lo importan los dos lados (igual
+  que `lib/catalog/filters.ts`).
+- `lib/cart/store.ts` — el store (`"use client"`) con el middleware `persist`.
+  Impone la regla de **un solo proveedor por carrito**: `add` rechaza un item
+  de otro y devuelve el motivo para que la ficha lo explique.
+
+Lo que se guarda es una **foto** de la ficha (nombre, precio, stock del
+momento) para poder pintar el panel sin volver al servidor. Nunca se cobra
+desde ahí: la Server Action del checkout vuelve a leer el catálogo y son sus
+valores los que se copian a `order_items` (§4, snapshots).
+
+Como el HTML lo pinta el servidor, que no tiene `localStorage`, todo lector del
+carrito pasa por `useCartLines()`: devuelve vacío hasta que la lectura termina,
+de modo que la pintada con la que React hidrata coincide con la del servidor.
 
 ## 4. Modelo de datos (resumen)
 
@@ -133,9 +196,13 @@ verifica el Zelle manualmente y confirma, lo que hace avanzar la orden.
   - `verifySession()` / `verifyAdmin()` — chequeo **optimista** (solo cookie),
     para gate rápido de páginas. Redirige si no cumple.
   - `getCurrentUser()` — chequeo **seguro** (va a la BD), cuando se necesitan
-    datos reales del usuario. Nunca devuelve `passwordHash`.
+    datos reales del usuario. Nunca devuelve `passwordHash`. Si la cookie es
+    válida pero el usuario ya no existe (sesión huérfana, p. ej. cuenta
+    eliminada), redirige a `/api/auth/logout` — un Route Handler que borra la
+    cookie y manda a `/login` (un RSC no puede borrar cookies; solo Server
+    Actions y Route Handlers).
 - **`proxy.ts`** (middleware de Next 16) hace un primer filtro por cookie para
-  `/admin` y `/cuenta`, pero **no** es la última línea de defensa: cada página
+  `/admin` y `/account`, pero **no** es la última línea de defensa: cada página
   protegida vuelve a llamar al DAL. Nunca confíes solo en el middleware.
 
 ## 7. Receta: añadir un módulo nuevo (p. ej. `orders`)

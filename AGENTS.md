@@ -32,8 +32,80 @@ de escribir código**. El plan de negocio y las fases están en [`PLAN.md`](PLAN
   última defensa. Cada página protegida vuelve a verificar vía `lib/dal.ts`.
 - **Migraciones:** al cambiar `schema.ts`, `npm run db:generate`, revisa el SQL y
   **commitéalo** junto al cambio. Nunca edites una migración ya aplicada.
-- **Idioma:** UI, mensajes y comentarios en español; identificadores de código en
-  inglés (como ya está el codebase).
+- **Idioma:** UI, mensajes y comentarios en español; **todo identificador en
+  inglés**: variables, componentes, tokens, y también **rutas, segmentos de URL
+  y query params** (`/catalog`, `/account`, `/admin/suppliers/new`, `?from=`).
+  Nunca crees una ruta en español. Ver el bloque de design system abajo.
+
+## Design system
+
+Todo vive en un solo archivo, [`app/globals.css`](app/globals.css): los roles con
+su valor en `:root`, y debajo un `@theme inline` que los registra como utilidades
+de Tailwind. Lo vigila `npm run check:tokens` (falla el CI si se rompe alguna de
+estas reglas; excepción puntual: comentario `check-design-tokens-ignore` en la
+línea).
+
+- **Los tokens son utilidades, nunca variables inline.** Cada token está
+  registrado en su namespace de Tailwind v4, así que en el markup se escribe
+  `text-display-1`, `px-gutter`, `duration-slow`, `ease-standard`, `shadow-md`,
+  `rounded-md`. **Prohibido** el valor arbitrario que envuelve una variable —la
+  forma `px-[ var(--token) ]` con corchetes—. Si te falta un valor, añade el
+  token al namespace correcto en `globals.css`; no lo llames inline.
+  _(Ojo al documentar: Tailwind escanea también los `.md`, así que un ejemplo de
+  esa forma escrito sin espacios acaba compilado como clase real.)_
+- **Un rol de texto ya trae tamaño, interlineado, tracking y peso.** No le
+  añadas `font-bold` ni `leading-*` encima salvo que quieras romperlo a
+  propósito.
+- **Espaciado:** la escala de 4px es la nativa de Tailwind (`p-4`, `gap-6`,
+  `mt-12`). En el theme solo viven las literales de layout del sketch
+  (`px-gutter`, `py-section-md`, `py-header`, `gap-grid`).
+- **Ningún nombre describe el color que tiene hoy.** Los roles son lo único que
+  ve el markup: `bg-background`, `text-foreground`, `text-muted-foreground`,
+  `bg-primary`, `text-primary-foreground`, `border-border`, `fill-support`,
+  `bg-canvas`, `text-foreground-inverse`, `text-emphasis`, `bg-muted`,
+  `ring-ring`, `text-success|warning|info`. Prohibido nombrar un token por su
+  tono (`terra`, `hueso`, `verde`) o en español, y prohibido escribir un hex o
+  una paleta cruda de Tailwind (`text-green-600`) fuera de `globals.css`.
+- **Para recolorear el proyecto** se editan los valores del `:root` y nada más:
+  ningún componente escribe un color. En el `@theme inline` no se escriben
+  valores nuevos, solo se apunta a un rol.
+
+## Iconografía
+
+La única familia del proyecto es **[Reicon](https://reicon.dev)**, vía
+`reicon-react`. **`lucide-react` está desinstalado a propósito: no vuelve.** Hay
+un MCP para buscar iconos sin salir del editor, declarado en
+[`.mcp.json`](.mcp.json) (`search_icons`, `view_icon`, `apply_icon`,
+`list_categories`); sin MCP, el mismo índice se consulta con
+`npx reicon-mcp search "<término>"`.
+
+- **Peso `Outline` siempre.** Es el default, así que no se escribe el prop. El
+  `Filled` queda para cuando un estado necesita mancha sólida (hoy, ninguno);
+  nunca se mezclan los dos pesos en la misma zona de pantalla.
+- **El trazo no se toca.** Los iconos de Reicon son rutas rellenas, no
+  contornos: el prop `strokeWidth` no hace nada sobre ellos. El grosor óptico
+  (1.5px sobre la retícula de 24) es fijo y es justo el que pide el sistema.
+- **El tamaño se pone con utilidad, no con el prop `size`:** `size-4` junto a
+  `text-nav`/`text-body-sm`, `size-5` con `text-heading-3`, `size-8` para el
+  hueco vacío de una foto. Dentro de `Button` no hace falta: el propio botón
+  dimensiona su `svg`.
+- **El color se hereda.** Solo `text-*` de un rol (`text-muted-foreground` para
+  chrome, `text-primary` cuando el icono *es* la acción). Nunca el prop `color`,
+  nunca `fill`.
+- **`aria-hidden` es obligatorio en el icono decorativo.** Reicon —a diferencia
+  de lucide— no lo pone solo, así que un icono junto a texto o dentro de un
+  botón con `title`/`sr-only` lo lleva escrito a mano.
+- **El icono no decora, señala.** Va donde hay *affordance* (algo se abre, se
+  cierra, se filtra, se vuelve atrás) o estado real. Las etiquetas y los datos
+  ya los resuelve la marginalia mono; no se les cuelga un icono al lado.
+- **Ojo con `npx shadcn add`:** `components.json` sigue diciendo
+  `"iconLibrary": "lucide"` porque el CLI no conoce Reicon. Todo componente que
+  traiga el CLI se migra a `reicon-react` **en el mismo commit**, antes de usarlo.
+- **Reicon no tiene vocabulario solar** (panel, inversor, breaker, medidor,
+  instalador…). Esos iconos se dibujan a medida y viven en `components/icons/`;
+  el contrato geométrico y el encargo pendiente están en
+  [`docs/ICONS.md`](docs/ICONS.md). No los sustituyas por un icono genérico
+  parecido: antes de improvisar, busca con `npx reicon-mcp search "<término>"`.
 
 ## Flujo de Git y Pull Requests
 

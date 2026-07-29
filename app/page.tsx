@@ -1,40 +1,26 @@
-import Link from "next/link";
+import { SiteFooterMap } from "@/components/landing/footer/site-footer-map";
+import { Hero } from "@/components/landing/hero";
+import { KitComparison } from "@/components/landing/kit-comparison";
+import { SiteHeader } from "@/components/landing/site-header";
+import { SupplierCtaBand } from "@/components/landing/supplier-cta/supplier-cta-band";
+import { ZoneSelector } from "@/components/landing/zone-selector";
 import { getSession } from "@/lib/session";
-import { Button } from "@/components/ui/button";
 
 export default async function Home() {
   const session = await getSession();
 
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center gap-6 p-4 text-center">
-      <h1 className="text-4xl font-bold tracking-tight">Solaris ☀️</h1>
-      <p className="max-w-md text-muted-foreground">
-        Paneles solares y kits de energía de proveedores en tu zona.
-        El catálogo llega en la Etapa 5.
-      </p>
-      <div className="flex gap-3">
-        {session ? (
-          <>
-            <Button asChild>
-              <Link href="/cuenta">Mi cuenta</Link>
-            </Button>
-            {session.role === "ADMIN" && (
-              <Button asChild variant="outline">
-                <Link href="/admin">Panel admin</Link>
-              </Button>
-            )}
-          </>
-        ) : (
-          <>
-            <Button asChild>
-              <Link href="/login">Iniciar sesión</Link>
-            </Button>
-            <Button asChild variant="outline">
-              <Link href="/registro">Crear cuenta</Link>
-            </Button>
-          </>
-        )}
-      </div>
-    </main>
+    // El pie va fuera de <main>: es del documento, no del contenido principal.
+    // El body es flex-col, así que se apila igual.
+    <>
+      <main className="flex-1">
+        <SiteHeader session={session} overHero />
+        <Hero />
+        <ZoneSelector />
+        <KitComparison />
+        <SupplierCtaBand />
+      </main>
+      <SiteFooterMap />
+    </>
   );
 }

@@ -58,8 +58,8 @@ Decisiones clave:
 
 ### Etapa 0 — Fundaciones (½ día) ✅
 - [x] `create-next-app` con TypeScript, Tailwind, App Router; instalar shadcn/ui.
-- [ ] Repo en GitHub + proyecto en Vercel conectado (deploy automático desde el inicio).
-- [ ] Crear proyecto en Neon con ramas `dev` y `prod`; variables de entorno en `.env.local` y Vercel.
+- [x] Repo en GitHub + proyecto en Vercel conectado (deploy automático desde el inicio).
+- [x] Crear proyecto en Neon con ramas `dev` y `prod`; variables de entorno en `.env.local` y Vercel.
 - [x] Instalar Drizzle + `drizzle-kit`, configurar conexión y primera migración de prueba.
 
 ### Etapa 1 — Esquema de datos (1 día) ✅
@@ -70,30 +70,46 @@ Decisiones clave:
 ### Etapa 2 — Autenticación (1 día) ✅
 - [x] Sesión JWT propia (`jose`) con credenciales (email + password) — no se usó Auth.js.
 - [x] Registro de clientes con selección de zona.
-- [x] Middleware (`proxy.ts`): `/admin/**` solo para rol `ADMIN`, `/cuenta/**` requiere sesión.
-- [ ] El catálogo es público; el login solo se exige al hacer checkout.
+- [x] Middleware (`proxy.ts`): `/admin/**` solo para rol `ADMIN`, `/account/**` requiere sesión.
+- [x] El catálogo es público; el login solo se exige al hacer checkout: el
+      middleware solo protege `/admin` y `/account`, y el flujo `?from=` devuelve
+      al usuario a la página de origen tras login o registro.
 
-### Etapa 3 — Panel admin: proveedores y zonas (1–2 días)
-- [ ] CRUD de zonas (jerarquía estado → ciudad).
-- [ ] CRUD de proveedores: datos de contacto, logo, notas, info de liquidación.
-- [ ] Asignación de zonas de cobertura a cada proveedor.
+### Etapa 3 — Panel admin: proveedores y zonas (1–2 días) ✅
+- [x] CRUD de zonas (jerarquía estado → ciudad).
+- [x] CRUD de proveedores: datos de contacto, logo (URL; subida a Blob en Etapa 4),
+      notas, info de liquidación.
+- [x] Asignación de zonas de cobertura a cada proveedor.
 
 ### Etapa 4 — Panel admin: productos y kits (2 días)
-- [ ] CRUD de productos por proveedor: precio, stock, specs, activar/desactivar.
+- [x] CRUD de productos por proveedor: precio, stock, specs, activar/desactivar.
 - [ ] Subida de imágenes a Vercel Blob (múltiples fotos por producto).
-- [ ] CRUD de kits: seleccionar productos del proveedor + cantidades, precio propio del kit.
-- [ ] Validación: un kit solo puede contener productos de su mismo proveedor.
+      *De momento se registran por URL (una por línea), igual que el logo del
+      proveedor. La subida de archivos queda para su propio PR.*
+- [x] CRUD de kits: seleccionar productos del proveedor + cantidades, precio propio del kit.
+- [x] Validación: un kit solo puede contener productos de su mismo proveedor.
 
 ### Etapa 5 — Catálogo público (2–3 días)
 - [ ] Landing con propuesta de valor y selector de zona (persistido en cookie).
+      *La persistencia ya existe (`lib/zones/preference.ts` + la Action
+      `selectZone` en `app/actions/preferences.ts`); falta que el selector del
+      mapa la use.*
 - [ ] Listado de proveedores que operan en la zona elegida.
-- [ ] Catálogo filtrado por zona, con filtros por proveedor, tipo (producto/kit) y rango de precio.
-- [ ] Página de detalle de producto (galería, specs, proveedor) y de kit (qué incluye).
-- [ ] SEO básico: metadata, slugs limpios, Open Graph.
+      *La resolución zona → proveedores ya está en `lib/catalog/queries.ts` y
+      alimenta el filtro del catálogo; queda la página propia de proveedores.*
+- [x] Catálogo filtrado por zona, con filtros por proveedor, tipo (producto/kit) y rango de precio.
+- [x] Página de detalle de producto (galería, specs, proveedor) y de kit (qué incluye).
+- [x] SEO básico: metadata, slugs limpios, Open Graph.
 
 ### Etapa 6 — Carrito y checkout (2 días)
-- [ ] Carrito client-side (Context o Zustand) persistido en localStorage.
+- [x] Carrito client-side (Zustand) persistido en localStorage.
+      *`lib/cart/lines.ts` (el dato puro, importable desde servidor) +
+      `lib/cart/store.ts` (el store con `persist`). La UI es el botón de la
+      ficha y el panel lateral del header.*
 - [ ] Regla de un solo proveedor por carrito, con aviso claro al usuario.
+      *El store ya la impone —`add` rechaza un item de otro proveedor— y la
+      ficha lo explica con el atajo para vaciar el carrito. Queda repasar el
+      aviso cuando exista el checkout.*
 - [ ] Checkout: resumen, datos de contacto/entrega, confirmación → crea orden `PENDING_PAYMENT`.
 - [ ] Página "Mis órdenes" en la cuenta del usuario, con estado en tiempo real.
 

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { decrypt } from "@/lib/session";
+import { safeInternalPath } from "@/lib/utils";
 
 // Chequeo optimista con la cookie (sin BD). La verificación real vive en el
 // DAL (lib/dal.ts), que cada página protegida llama de nuevo.
@@ -8,12 +9,12 @@ export default async function proxy(req: NextRequest) {
   const session = await decrypt(req.cookies.get("session")?.value);
 
   const isAdminRoute = path.startsWith("/admin");
-  const isAccountRoute = path.startsWith("/cuenta");
-  const isAuthRoute = path === "/login" || path === "/registro";
+  const isAccountRoute = path.startsWith("/account");
+  const isAuthRoute = path === "/login" || path === "/signup";
 
   if ((isAdminRoute || isAccountRoute) && !session) {
     const login = new URL("/login", req.nextUrl);
-    login.searchParams.set("desde", path);
+    login.searchParams.set("from", path);
     return NextResponse.redirect(login);
   }
 
@@ -22,7 +23,8 @@ export default async function proxy(req: NextRequest) {
   }
 
   if (isAuthRoute && session) {
-    return NextResponse.redirect(new URL("/", req.nextUrl));
+    const from = safeInternalPath(req.nextUrl.searchParams.get("from"));
+    return NextResponse.redirect(new URL(from ?? "/", req.nextUrl));
   }
 
   return NextResponse.next();
