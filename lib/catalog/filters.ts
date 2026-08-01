@@ -10,9 +10,20 @@ import * as z from "zod";
  * `next/headers`, por eso lo pueden importar cliente y servidor.
  */
 
-/** Un item del catálogo es un kit armado o un producto suelto. */
+/** Lo que el listado sabe filtrar: un kit armado o un producto suelto. */
 export const CATALOG_TYPES = ["KIT", "PRODUCT"] as const;
 export type CatalogType = (typeof CATALOG_TYPES)[number];
+
+/**
+ * Todo lo que se puede comprar, servicios incluidos.
+ *
+ * Es un conjunto más ancho que `CATALOG_TYPES` a propósito: el filtro del
+ * listado solo ofrece kits y productos —los servicios todavía no se listan, ver
+ * PLAN.md Etapa 5— pero una instalación sí puede estar en el carrito y en una
+ * orden, porque se contrata desde la ficha del equipo que instala.
+ */
+export const PURCHASABLE_TYPES = [...CATALOG_TYPES, "SERVICE"] as const;
+export type PurchasableType = (typeof PURCHASABLE_TYPES)[number];
 
 export const CATALOG_SORTS = ["suggested", "price-asc", "price-desc"] as const;
 export type CatalogSort = (typeof CATALOG_SORTS)[number];
@@ -119,9 +130,16 @@ export function catalogHref(filters: CatalogFilters): string {
   return query ? `/catalog?${query}` : "/catalog";
 }
 
-/** La ficha de un item: kits y productos tienen su propia rama de la ruta. */
-export function catalogItemHref(type: CatalogType, slug: string): string {
-  return type === "KIT" ? `/catalog/kits/${slug}` : `/catalog/products/${slug}`;
+/** La ficha de un item: cada tipo tiene su propia rama de la ruta. */
+export function catalogItemHref(type: PurchasableType, slug: string): string {
+  switch (type) {
+    case "KIT":
+      return `/catalog/kits/${slug}`;
+    case "SERVICE":
+      return `/catalog/services/${slug}`;
+    case "PRODUCT":
+      return `/catalog/products/${slug}`;
+  }
 }
 
 /** ¿Hay algo que limpiar? La zona no cuenta: es el ámbito, no un filtro. */
