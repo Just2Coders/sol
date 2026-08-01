@@ -87,6 +87,21 @@
   --chart-4: var(--support-strong);
   --chart-5: var(--secondary);
 
+  /* duotono del catálogo: los dos extremos entre los que se comprime el rango
+     tonal de una foto de proveedor. Las altas luces caen en el papel de la
+     ficha —el fondo blanco de estudio desaparece y el producto queda impreso
+     sobre la hoja— y las sombras en un verde casi negro de la familia del
+     lienzo. El acento terracota no entra aquí a propósito: es el color de la
+     acción, y una pared de fotos en terracota lo dejaría sin significar nada.
+
+     Las luces apuntan a `--card` y no a `--background`: el papel de la ficha,
+     no el del documento. Con el fondo de la página, la foto se leía como una
+     continuación del header en vez de pertenecer a la columna de datos que
+     tiene al lado. Se destapa a color bajo el cursor; ver
+     components/catalog/catalog-media.tsx. */
+  --photo-shadow: #232d20;
+  --photo-highlight: var(--card);
+
   /* scrim del hero: oscurece la foto en el tono del lienzo, nunca en negro, así
      la imagen pertenece a la paleta en vez de flotar sobre ella. */
   --scrim-hero: linear-gradient(
@@ -147,6 +162,8 @@
   --color-support-strong: var(--support-strong);
   --color-canvas: var(--canvas);
   --color-canvas-foreground: var(--canvas-foreground);
+  --color-photo-shadow: var(--photo-shadow);
+  --color-photo-highlight: var(--photo-highlight);
 
   --color-border: var(--border);
   --color-border-strong: var(--border-strong);
