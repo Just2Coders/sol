@@ -56,12 +56,12 @@ type CatalogMediaProps = {
  * con un producto teñido que no puede ver de verdad sería cambiar información
  * por decoración. El papel, que no esconde nada, no necesita esa excusa.
  *
- * Va `unoptimized` a propósito. Hoy las imágenes son URLs que el admin pega a
- * mano (la subida a Blob es lo que queda pendiente de la Etapa 4), así que
- * pueden venir de cualquier host: optimizarlas obligaría a abrir
- * `images.remotePatterns` a dominios arbitrarios, que es un proxy de imágenes
- * abierto. Cuando las fotos vivan en Blob se quita esta prop y se añade ese
- * único host a la config.
+ * Va `unoptimized` a propósito, y sigue haciendo falta aunque el store de Blob
+ * ya esté montado y su host declarado en `images.remotePatterns`: el uploader
+ * del admin admite **además** pegar una URL externa, así que una foto todavía
+ * puede venir de cualquier sitio. Optimizarlas obligaría a abrir la config a
+ * dominios arbitrarios, que es un proxy de imágenes abierto. Esta prop se cae
+ * el día que la foto pegada a mano deje de aceptarse, no antes.
  */
 export function CatalogMedia({
   src,
