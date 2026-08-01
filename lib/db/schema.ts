@@ -42,7 +42,23 @@ export const paymentStatus = pgEnum("payment_status", [
   "REJECTED", // admin lo rechazó (referencia inválida, monto errado, etc.)
 ]);
 
-export const orderItemType = pgEnum("order_item_type", ["PRODUCT", "KIT"]);
+export const orderItemType = pgEnum("order_item_type", ["PRODUCT", "KIT", "SERVICE"]);
+
+/**
+ * Cómo se calcula el precio de un servicio.
+ *
+ * `FLAT` es un precio cerrado por trabajo ("instalación del kit, 350 USD");
+ * `PER_UNIT` multiplica por las unidades de obra que pide el cliente ("25 USD
+ * por panel"), y esas unidades son la `quantity` de la línea.
+ *
+ * No hay `QUOTE` (a presupuestar) a propósito: un item sin precio no puede ser
+ * una línea de carrito ni pasar por el checkout, así que necesitaría su propio
+ * flujo de solicitud → cotización. Cuando exista, es un valor más del enum.
+ */
+export const servicePricing = pgEnum("service_pricing", ["FLAT", "PER_UNIT"]);
+
+/** Lo que se puede instalar: un producto suelto o un kit. Nunca otro servicio. */
+export const installableType = pgEnum("installable_type", ["PRODUCT", "KIT"]);
 
 // ─── Zonas ───────────────────────────────────────────────────────────────────
 // Jerarquía simple: estado (parentId null) → ciudad/municipio (parentId = estado).
@@ -180,6 +196,87 @@ export const kitItems = pgTable(
   ],
 );
 
+// ─── Servicios (instalación) ─────────────────────────────────────────────────
+// Un servicio es mano de obra, no mercancía: no tiene existencias ni entrega, y
+// su precio puede depender de la obra. Por eso vive en su propia tabla en vez de
+// ser un producto con `stock` fingido — el stock, el envío y la ficha técnica no
+// significan nada aquí. Lo presta el mismo proveedor que vende (un instalador
+// puro es un proveedor sin productos), así que sigue valiendo la regla de un
+// solo proveedor por orden y la cobertura sale ya resuelta de `supplier_zones`.
+
+export const serviceCategories = pgTable("service_categories", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  name: text("name").notNull(),
+  slug: text("slug").notNull().unique(),
+  description: text("description"),
+  // El orden en que el admin quiere verlas listadas; el desempate es el nombre.
+  position: integer("position").notNull().default(0),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const services = pgTable(
+  "services",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    supplierId: uuid("supplier_id")
+      .notNull()
+      .references(() => suppliers.id, { onDelete: "cascade" }),
+    // Sin `onDelete`: una categoría en uso no se borra sin recolocar sus
+    // servicios (Postgres lo impide con NO ACTION, que es el default).
+    categoryId: uuid("category_id")
+      .notNull()
+      .references(() => serviceCategories.id),
+    name: text("name").notNull(),
+    slug: text("slug").notNull().unique(),
+    description: text("description"),
+    pricing: servicePricing("pricing").notNull().default("FLAT"),
+    priceUsd: numeric("price_usd", { precision: 10, scale: 2, mode: "number" }).notNull(),
+    // La unidad de obra que se multiplica ("panel", "metro de cable"). Solo
+    // tiene sentido con `pricing = PER_UNIT`; en `FLAT` va null.
+    unitLabel: text("unit_label"),
+    images: text("images").array().notNull().default([]),
+    active: boolean("active").notNull().default(true),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    // Los mismos dos caminos que productos y kits: el catálogo entra por
+    // proveedor + activo, y el precio ordena y filtra el listado unificado.
+    index("services_supplier_id_active_idx").on(t.supplierId, t.active),
+    index("services_price_usd_idx").on(t.priceUsd),
+    index("services_category_id_idx").on(t.categoryId),
+  ],
+);
+
+/**
+ * Qué instalación se ofrece junto a qué producto o kit.
+ *
+ * Es lo que alimenta el "añadir instalación" de una ficha. Se modela aparte —y
+ * no como una columna en `kits`— porque un mismo servicio sirve a muchos items y
+ * un item puede tener más de una opción (instalación básica, instalación con
+ * permisos). Sin ninguna fila aquí el servicio sigue vendiéndose solo, desde su
+ * propia ficha del catálogo.
+ *
+ * `targetId` es una FK "blanda" a `products.id` o `kits.id` según `targetType`,
+ * igual que `order_items.itemId`.
+ */
+export const installationOffers = pgTable(
+  "installation_offers",
+  {
+    serviceId: uuid("service_id")
+      .notNull()
+      .references(() => services.id, { onDelete: "cascade" }),
+    targetType: installableType("target_type").notNull(),
+    targetId: uuid("target_id").notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.serviceId, t.targetType, t.targetId] }),
+    // El PK cubre "a qué items se ofrece este servicio". La ficha pregunta lo
+    // contrario —"qué instalación puedo añadir a este kit"—, que es el camino
+    // que de verdad se lee en cada visita.
+    index("installation_offers_target_idx").on(t.targetType, t.targetId),
+  ],
+);
+
 // ─── Órdenes ─────────────────────────────────────────────────────────────────
 // Regla de negocio: una orden pertenece a UN solo proveedor (simplifica la
 // liquidación manual). El carrito no permite mezclar proveedores.
@@ -212,7 +309,7 @@ export const orderItems = pgTable("order_items", {
     .notNull()
     .references(() => orders.id, { onDelete: "cascade" }),
   itemType: orderItemType("item_type").notNull(),
-  // FK "blanda": apunta a products.id o kits.id según itemType.
+  // FK "blanda": apunta a products.id, kits.id o services.id según itemType.
   itemId: uuid("item_id").notNull(),
   // Snapshot al momento de la compra: cambios de precio/nombre posteriores
   // no alteran órdenes existentes.
@@ -222,6 +319,8 @@ export const orderItems = pgTable("order_items", {
     scale: 2,
     mode: "number",
   }).notNull(),
+  // Unidades pedidas. En un servicio `PER_UNIT` son las unidades de obra
+  // (paneles a montar, metros de cable); en uno `FLAT`, siempre 1.
   quantity: integer("quantity").notNull().default(1),
 });
 
@@ -260,6 +359,7 @@ export const suppliersRelations = relations(suppliers, ({ many }) => ({
   zones: many(supplierZones),
   products: many(products),
   kits: many(kits),
+  services: many(services),
   orders: many(orders),
 }));
 
@@ -281,6 +381,25 @@ export const kitsRelations = relations(kits, ({ one, many }) => ({
 export const kitItemsRelations = relations(kitItems, ({ one }) => ({
   kit: one(kits, { fields: [kitItems.kitId], references: [kits.id] }),
   product: one(products, { fields: [kitItems.productId], references: [products.id] }),
+}));
+
+export const serviceCategoriesRelations = relations(serviceCategories, ({ many }) => ({
+  services: many(services),
+}));
+
+export const servicesRelations = relations(services, ({ one, many }) => ({
+  supplier: one(suppliers, { fields: [services.supplierId], references: [suppliers.id] }),
+  category: one(serviceCategories, {
+    fields: [services.categoryId],
+    references: [serviceCategories.id],
+  }),
+  offers: many(installationOffers),
+}));
+
+// Solo el lado del servicio: `targetId` es una FK blanda (apunta a dos tablas
+// según `targetType`), y eso drizzle no lo puede tipar como relación.
+export const installationOffersRelations = relations(installationOffers, ({ one }) => ({
+  service: one(services, { fields: [installationOffers.serviceId], references: [services.id] }),
 }));
 
 export const ordersRelations = relations(orders, ({ one, many }) => ({
