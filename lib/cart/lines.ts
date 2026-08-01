@@ -1,4 +1,4 @@
-import type { CatalogType } from "@/lib/catalog/filters";
+import type { PurchasableType } from "@/lib/catalog/filters";
 
 /**
  * El carrito como dato puro: qué es una línea y cómo se suma.
@@ -16,12 +16,18 @@ import type { CatalogType } from "@/lib/catalog/filters";
  */
 
 export type CartLine = {
-  type: CatalogType;
-  /** `products.id` o `kits.id` según `type`. */
+  type: PurchasableType;
+  /** `products.id`, `kits.id` o `services.id` según `type`. */
   id: string;
   slug: string;
   name: string;
   priceUsd: number;
+  /**
+   * La unidad que se multiplica cuando la línea no se cuenta por piezas: un
+   * servicio por unidad de obra ("panel", "metro de cable"). `null` en todo lo
+   * demás, que va por unidades sueltas.
+   */
+  unitLabel?: string | null;
   /** Primera foto de la ficha, o `null` si el proveedor no cargó ninguna. */
   image: string | null;
   quantity: number;
