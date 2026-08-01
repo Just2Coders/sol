@@ -90,9 +90,10 @@ Decisiones clave:
 
 ### Etapa 4 — Panel admin: productos, kits y servicios (2 días)
 - [x] CRUD de productos por proveedor: precio, stock, specs, activar/desactivar.
-- [ ] Subida de imágenes a Vercel Blob (múltiples fotos por producto).
-      *De momento se registran por URL (una por línea), igual que el logo del
-      proveedor. La subida de archivos queda para su propio PR.*
+- [x] Subida de imágenes a Vercel Blob (múltiples fotos por producto).
+      *Los bytes van del navegador a Blob (`@vercel/blob/client`);
+      `app/api/blob/upload/route.ts` firma el token y es la puerta de rol.
+      El logo del proveedor sigue registrándose por URL.*
 - [x] CRUD de kits: seleccionar productos del proveedor + cantidades, precio propio del kit.
 - [x] Validación: un kit solo puede contener productos de su mismo proveedor.
 - [ ] CRUD de categorías de servicio (nombre, orden en que se listan).
