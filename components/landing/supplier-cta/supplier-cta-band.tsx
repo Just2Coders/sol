@@ -1,7 +1,9 @@
 "use client";
 
+import { useState } from "react";
 import { Check } from "reicon-react";
 
+import { flatCtaClass } from "@/components/landing/flat-cta";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -15,70 +17,78 @@ import {
 import { PROVINCES, useLeadPrototype } from "./prototype-kit";
 
 /**
- * VARIANTE A — "La banda oscura".
+ * La banda de proveedores.
  *
  * La página entera está escrita para el que compra; esta sección le habla a
  * otro. El aviso de que cambia el interlocutor no lo da un rótulo, lo da el
- * material: la banda se va a sangre en el lienzo oscuro —el único de la home—
- * y dentro de ella el formulario es el único objeto claro, así que la mirada
- * cae donde está la acción sin que haga falta subir el tamaño de nada.
+ * material: la banda se va a sangre en el lienzo oscuro —el primero de los dos
+ * bloques de tinta con los que cierra la home— y dentro solo hay una columna
+ * centrada, sin nada a los lados que reparta la atención.
  *
- * A la izquierda, el argumento en tres líneas de marginalia: lo que hace el
- * proveedor y lo que hacemos nosotros. No son "features" con icono: son las
- * reglas del trato, en el mismo mono con el que la home escribe sus datos.
+ * El formulario no está a la vista: en reposo la sección es un argumento y un
+ * botón, que es lo que pide un visitante que todavía no sabe si esto va con él.
+ * Solo al pulsar aparecen los tres campos, y entonces sí sobre papel claro —el
+ * único objeto claro de la banda, donde cae la mirada sin subir el tamaño de
+ * nada.
  *
  * ⚠️ SIN CABLEAR — el formulario todavía no envía nada: `useLeadPrototype`
- * finge el ciclo y muestra el acuse sin guardar la solicitud. Antes de que
- * esta home salga a producción hay que sustituirlo por una Server Action con
- * Zod que persista el lead (o lo mande por Resend); si no, el proveedor cree
- * que se apuntó y nadie recibe nada.
+ * finge el ciclo y muestra el acuse sin guardar la solicitud. Antes de que esta
+ * home salga a producción hay que sustituirlo por una Server Action con Zod que
+ * persista el lead (o lo mande por Resend); si no, el proveedor cree que se
+ * apuntó y nadie recibe nada.
  */
 export function SupplierCtaBand() {
+  const [open, setOpen] = useState(false);
   const { status, onSubmit } = useLeadPrototype();
 
   return (
     <section
       id="supplier"
       aria-labelledby="supplier-band-title"
-      className="bg-canvas px-gutter py-section-md scroll-mt-24"
+      className="bg-canvas px-gutter py-section-md flex scroll-mt-8 flex-col items-center"
     >
-      <div className="gap-grid flex flex-col lg:flex-row lg:items-start lg:justify-between">
-        {/* Argumento */}
-        <div className="max-w-[46ch]">
-          <h2
-            id="supplier-band-title"
-            className="text-foreground-inverse text-display-2"
+      <div className="flex w-full max-w-190 flex-col items-center gap-6 text-center">
+        <p className="text-label tracking-mono-lg text-canvas-foreground font-mono uppercase">
+          proveedores
+        </p>
+        <h2
+          id="supplier-band-title"
+          className="text-display-3 text-canvas-foreground"
+        >
+          ¿Y si el proveedor eres tú?
+        </h2>
+        <p className="text-body text-canvas-foreground">
+          Solaris no vende paneles: los pone donde los buscan. Publicas tus kits,
+          decides en qué provincias trabajas — el cobro y la factura los llevamos
+          nosotros.
+        </p>
+
+        {!open && (
+          <button
+            type="button"
+            onClick={() => setOpen(true)}
+            aria-expanded={false}
+            aria-controls="supplier-lead-form"
+            className={flatCtaClass("loud", "lg", "mt-2.5")}
           >
-            ¿Y si el proveedor eres tú?
-          </h2>
-          <p className="text-canvas-foreground text-body-lg mt-5">
-            Solaris no vende paneles: los pone donde los buscan. Si armas kits o
-            instalas en Cuba, aquí te llega gente que ya sabe qué quiere y en
-            qué provincia lo necesita.
-          </p>
+            Quiero vender en Solaris
+          </button>
+        )}
 
-          <ul className="text-canvas-foreground text-marginalia mt-10 font-mono">
-            {[
-              "publicas tus productos y tus kits",
-              "decides en qué provincias trabajas",
-              "el cobro y la factura los llevamos nosotros",
-            ].map((rule) => (
-              <li
-                key={rule}
-                className="border-canvas-foreground/25 border-t py-3 last:border-b"
-              >
-                {rule}
-              </li>
-            ))}
-          </ul>
-        </div>
+        <p className="text-marginalia tracking-mono-xs text-canvas-foreground font-mono">
+          el alta la hacemos a mano, una por una
+        </p>
+      </div>
 
-        {/* Solicitud */}
-        <div className="bg-card text-card-foreground w-full shrink-0 rounded-md p-8 lg:max-w-md">
+      {open && (
+        <div
+          id="supplier-lead-form"
+          className="bg-card text-card-foreground animate-in fade-in-0 slide-in-from-bottom-2 duration-slow ease-standard mt-12 w-full max-w-md p-8 text-left"
+        >
           {status === "sent" ? (
             <SentNotice />
           ) : (
-            <form onSubmit={onSubmit} noValidate={false}>
+            <form onSubmit={onSubmit}>
               <p className="text-muted-foreground text-marginalia font-mono">
                 alta de proveedor
               </p>
@@ -133,16 +143,12 @@ export function SupplierCtaBand() {
                 disabled={status === "sending"}
                 className="text-button mt-8 h-12 w-full"
               >
-                {status === "sending" ? "Enviando…" : "Quiero vender en Solaris"}
+                {status === "sending" ? "Enviando…" : "Enviar solicitud"}
               </Button>
-
-              <p className="text-muted-foreground text-marginalia mt-4 font-mono">
-                el alta la hacemos a mano, una por una
-              </p>
             </form>
           )}
         </div>
-      </div>
+      )}
     </section>
   );
 }

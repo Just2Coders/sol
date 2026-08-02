@@ -15,6 +15,13 @@
       "when": 1785182736128,
       "tag": "0001_burly_nightcrawler",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1785361120335,
+      "tag": "0002_normal_pepper_potts",
+      "breakpoints": true
     }
   ]
 }

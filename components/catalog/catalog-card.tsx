@@ -24,7 +24,9 @@ export function CatalogCard({ item }: { item: CatalogItem }) {
         href={catalogItemHref(item.type, item.slug)}
         // El foco se dibuja por dentro (offset negativo): un ring por fuera lo
         // taparían las celdas vecinas, que están pegadas sin margen.
-        className="hover:bg-card focus-visible:outline-ring ease-standard flex h-full flex-col transition-colors duration-base focus-visible:outline-2 focus-visible:-outline-offset-2"
+        // `group`: la celda entera es el disparador del duotono de su foto — el
+        // cursor entra por cualquier parte del enlace, no solo por el recorte.
+        className="group hover:bg-card focus-visible:outline-ring ease-standard flex h-full flex-col transition-colors duration-base focus-visible:outline-2 focus-visible:-outline-offset-2"
       >
         <div className="relative">
           <CatalogMedia
@@ -32,6 +34,7 @@ export function CatalogCard({ item }: { item: CatalogItem }) {
             alt={item.name}
             sizes={GRID_SIZES}
             className="aspect-[4/3]"
+            duotone
           />
           <p className="text-muted-foreground text-marginalia absolute top-6 left-6 font-mono">
             {item.type === "KIT" ? "kit" : "producto"} · {item.supplierName}

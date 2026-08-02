@@ -1,12 +1,26 @@
 import "server-only";
 import { cache } from "react";
-import { and, count, eq, exists, gte, inArray, lte, sql, type SQL } from "drizzle-orm";
+import {
+  and,
+  count,
+  eq,
+  exists,
+  gte,
+  inArray,
+  lte,
+  ne,
+  sql,
+  type SQL,
+} from "drizzle-orm";
 import { unionAll } from "drizzle-orm/pg-core";
 import { db } from "@/lib/db";
 import {
+  installationOffers,
   kitItems,
   kits,
   products,
+  serviceCategories,
+  services,
   supplierZones,
   suppliers,
   zones,
@@ -17,6 +31,7 @@ import {
   type CatalogFilters,
   type CatalogSort,
   type CatalogType,
+  type PurchasableType,
 } from "./filters";
 
 /**
@@ -465,6 +480,78 @@ export type CatalogItemSupplier = {
   zoneNames: string[];
 };
 
+// ─── Instalación ofrecida desde una ficha ────────────────────────────────────
+
+/** Cómo se cobra un servicio; espeja `servicePricing` del schema. */
+export type ServicePricing = "FLAT" | "PER_UNIT";
+
+/** Una instalación que se puede añadir a la compra desde la ficha de un item. */
+export type CatalogInstallation = {
+  id: string;
+  slug: string;
+  name: string;
+  description: string | null;
+  priceUsd: number;
+  pricing: ServicePricing;
+  /** La unidad que se multiplica en `PER_UNIT` ("panel"); `null` en `FLAT`. */
+  unitLabel: string | null;
+  /** Primera foto, para la línea del carrito; `null` si no hay ninguna. */
+  image: string | null;
+  categoryName: string;
+};
+
+/**
+ * Las instalaciones que se ofrecen con un producto o un kit.
+ *
+ * Entra por **slug** y no por id a propósito: así no depende de la consulta del
+ * item y las dos se piden a la vez (`Promise.all`). Pedirla por id serían dos
+ * saltos en serie, y con Neon por HTTP cada salto es latencia real.
+ *
+ * `installation_offers.targetId` es una FK blanda —apunta a `products` o a
+ * `kits` según `targetType`—, así que el join contra la tabla del item se escribe
+ * a mano; drizzle no puede tejer una relación con dos destinos.
+ *
+ * El filtro por proveedor es un cinturón: una oferta mal cargada que apunte al
+ * servicio de otro proveedor no se podría comprar (el carrito es de uno solo),
+ * así que directamente no se ofrece.
+ */
+async function getInstallationsFor(
+  target: "PRODUCT" | "KIT",
+  slug: string,
+): Promise<CatalogInstallation[]> {
+  const owner = target === "PRODUCT" ? products : kits;
+
+  return db
+    .select({
+      id: services.id,
+      slug: services.slug,
+      name: services.name,
+      description: services.description,
+      priceUsd: services.priceUsd,
+      pricing: services.pricing,
+      unitLabel: services.unitLabel,
+      // Los arrays de Postgres empiezan en 1; fuera de rango da NULL, que es el
+      // "todavía sin foto" que espera la línea del carrito.
+      image: sql<string | null>`${services.images}[1]`.as("image"),
+      categoryName: serviceCategories.name,
+    })
+    .from(installationOffers)
+    .innerJoin(services, eq(services.id, installationOffers.serviceId))
+    .innerJoin(serviceCategories, eq(serviceCategories.id, services.categoryId))
+    .innerJoin(owner, eq(owner.id, installationOffers.targetId))
+    .where(
+      and(
+        eq(installationOffers.targetType, target),
+        eq(owner.slug, slug),
+        eq(owner.active, true),
+        eq(services.active, true),
+        eq(services.supplierId, owner.supplierId),
+      ),
+    )
+    // El orden lo pone el admin en la categoría; el desempate, el nombre.
+    .orderBy(serviceCategories.position, services.name);
+}
+
 export type CatalogProduct = {
   id: string;
   slug: string;
@@ -475,12 +562,16 @@ export type CatalogProduct = {
   stock: number;
   images: string[];
   supplier: CatalogItemSupplier;
+  /** Instalaciones que este producto ofrece; vacío si no hay ninguna. */
+  installations: CatalogInstallation[];
 };
 
 export type CatalogKitItem = KitItemDetail & {
   productSlug: string;
   /** Si el producto está inactivo se lista, pero sin enlazar a una ficha 404. */
   productActive: boolean;
+  /** Las fotos del componente: cada una entra en la columna de la ficha del kit. */
+  productImages: string[];
 };
 
 export type CatalogKit = {
@@ -495,6 +586,22 @@ export type CatalogKit = {
   itemsTotalUsd: number;
   /** Diferencia a favor del kit; 0 si comprarlo suelto sale igual o mejor. */
   savingsUsd: number;
+  supplier: CatalogItemSupplier;
+  /** Instalaciones que este kit ofrece; vacío si no hay ninguna. */
+  installations: CatalogInstallation[];
+};
+
+/** Un servicio en su propia ficha: la instalación contratada sola. */
+export type CatalogService = {
+  id: string;
+  slug: string;
+  name: string;
+  description: string | null;
+  priceUsd: number;
+  pricing: ServicePricing;
+  unitLabel: string | null;
+  images: string[];
+  categoryName: string;
   supplier: CatalogItemSupplier;
 };
 
@@ -525,38 +632,47 @@ const supplierWith = {
 export const getCatalogProduct = cache(async function getCatalogProduct(
   slug: string,
 ): Promise<CatalogProduct | null> {
-  const row = await db.query.products.findFirst({
-    where: and(eq(products.slug, slug), eq(products.active, true)),
-    with: { supplier: supplierWith },
-  });
+  // Las dos lecturas son independientes: ninguna necesita el resultado de la
+  // otra, así que salen juntas y la ficha espera una sola vez.
+  const [row, installations] = await Promise.all([
+    db.query.products.findFirst({
+      where: and(eq(products.slug, slug), eq(products.active, true)),
+      with: { supplier: supplierWith },
+    }),
+    getInstallationsFor("PRODUCT", slug),
+  ]);
   // Un producto de un proveedor dado de baja no se ofrece.
   if (!row || !row.supplier.active) return null;
 
   const { supplier, ...product } = row;
-  return { ...product, supplier: toCatalogSupplier(supplier) };
+  return { ...product, installations, supplier: toCatalogSupplier(supplier) };
 });
 
 export const getCatalogKit = cache(async function getCatalogKit(
   slug: string,
 ): Promise<CatalogKit | null> {
-  const row = await db.query.kits.findFirst({
-    where: and(eq(kits.slug, slug), eq(kits.active, true)),
-    with: {
-      supplier: supplierWith,
-      items: {
-        with: {
-          product: {
-            columns: {
-              name: true,
-              slug: true,
-              priceUsd: true,
-              active: true,
+  const [row, installations] = await Promise.all([
+    db.query.kits.findFirst({
+      where: and(eq(kits.slug, slug), eq(kits.active, true)),
+      with: {
+        supplier: supplierWith,
+        items: {
+          with: {
+            product: {
+              columns: {
+                name: true,
+                slug: true,
+                priceUsd: true,
+                active: true,
+                images: true,
+              },
             },
           },
         },
       },
-    },
-  });
+    }),
+    getInstallationsFor("KIT", slug),
+  ]);
   if (!row || !row.supplier.active) return null;
 
   const { supplier, items, ...kit } = row;
@@ -566,6 +682,7 @@ export const getCatalogKit = cache(async function getCatalogKit(
       productName: item.product.name,
       productSlug: item.product.slug,
       productActive: item.product.active,
+      productImages: item.product.images,
       quantity: item.quantity,
       unitPriceUsd: item.product.priceUsd,
     }))
@@ -575,6 +692,7 @@ export const getCatalogKit = cache(async function getCatalogKit(
   return {
     ...kit,
     items: detail,
+    installations,
     itemsTotalUsd,
     savingsUsd: Math.max(
       0,
@@ -582,4 +700,121 @@ export const getCatalogKit = cache(async function getCatalogKit(
     ),
     supplier: toCatalogSupplier(supplier),
   };
+});
+
+/**
+ * Un servicio por su slug: la instalación contratada **sola**, sin comprar el
+ * equipo. Es la misma fila que ofrece la ficha de un producto o un kit; aquí se
+ * lee con su categoría y la cobertura del proveedor, que es lo que decide si la
+ * instalación llega a donde vive el visitante.
+ */
+export const getCatalogService = cache(async function getCatalogService(
+  slug: string,
+): Promise<CatalogService | null> {
+  const row = await db.query.services.findFirst({
+    where: and(eq(services.slug, slug), eq(services.active, true)),
+    with: {
+      supplier: supplierWith,
+      category: { columns: { name: true } },
+    },
+  });
+  if (!row || !row.supplier.active) return null;
+
+  const { supplier, category, ...service } = row;
+  return {
+    ...service,
+    categoryName: category.name,
+    supplier: toCatalogSupplier(supplier),
+  };
+});
+
+// ─── Más de este proveedor ───────────────────────────────────────────────────
+
+/** Una pieza de la tira de relacionados: lo justo que dibuja una miniatura. */
+export type CatalogRelated = {
+  type: CatalogType;
+  slug: string;
+  name: string;
+  priceUsd: number;
+  /** Primera foto, o `null` si el proveedor aún no cargó ninguna. */
+  image: string | null;
+};
+
+/**
+ * Lo demás que vende el proveedor de la ficha abierta.
+ *
+ * Del **mismo** proveedor y no del catálogo entero, y no es una limitación: en
+ * esta plataforma una orden la entrega uno solo, así que llevarse dos cosas de
+ * proveedores distintos son dos pedidos. Sugerir lo de al lado es sugerir lo
+ * que de verdad cabe en el mismo carrito.
+ *
+ * Sin filtro de zona a propósito: la cobertura es del proveedor, así que si el
+ * visitante llegó hasta esta ficha, todo lo de esta tira le llega igual.
+ *
+ * El orden espeja el "sugerido" del listado —kits primero, luego de más barato
+ * a más caro— para que la tira no invente una jerarquía que el catálogo no
+ * tiene. El corte lo hace Postgres.
+ */
+export const getSupplierRelated = cache(async function getSupplierRelated(
+  supplierSlug: string,
+  /** La ficha abierta, que no puede sugerirse a sí misma. */
+  current: { type: PurchasableType; slug: string },
+  limit = 4,
+): Promise<CatalogRelated[]> {
+  const ofSupplier = and(
+    eq(suppliers.slug, supplierSlug),
+    eq(suppliers.active, true),
+  );
+
+  const relatedKits = db
+    .select({
+      type: sql<CatalogType>`'KIT'`.as("type"),
+      rank: sql<number>`0`.as("rank"),
+      slug: kits.slug,
+      name: kits.name,
+      sortName: sql<string>`lower(${kits.name})`.as("sort_name"),
+      priceUsd: kits.priceUsd,
+      image: sql<string | null>`${kits.images}[1]`.as("image"),
+    })
+    .from(kits)
+    .innerJoin(suppliers, eq(suppliers.id, kits.supplierId))
+    .where(
+      and(
+        eq(kits.active, true),
+        ofSupplier,
+        current.type === "KIT" ? ne(kits.slug, current.slug) : undefined,
+      ),
+    );
+
+  const relatedProducts = db
+    .select({
+      type: sql<CatalogType>`'PRODUCT'`.as("type"),
+      rank: sql<number>`1`.as("rank"),
+      slug: products.slug,
+      name: products.name,
+      sortName: sql<string>`lower(${products.name})`.as("sort_name"),
+      priceUsd: products.priceUsd,
+      image: sql<string | null>`${products.images}[1]`.as("image"),
+    })
+    .from(products)
+    .innerJoin(suppliers, eq(suppliers.id, products.supplierId))
+    .where(
+      and(
+        eq(products.active, true),
+        ofSupplier,
+        current.type === "PRODUCT" ? ne(products.slug, current.slug) : undefined,
+      ),
+    );
+
+  const rows = await unionAll(relatedKits, relatedProducts)
+    .orderBy(sql`rank asc`, sql`price_usd asc`, sql`sort_name asc`)
+    .limit(limit);
+
+  return rows.map((row) => ({
+    type: row.type,
+    slug: row.slug,
+    name: row.name,
+    priceUsd: row.priceUsd,
+    image: row.image,
+  }));
 });

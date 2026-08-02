@@ -151,3 +151,42 @@ export function useCartLines(): CartLine[] {
   const lines = useCartStore((state) => state.lines);
   return useCartHydrated() ? lines : NO_LINES;
 }
+
+/** Lo que el carrito dice sobre un item concreto de la ficha. */
+export type CartItemState = {
+  /** Unidades ya elegidas de este item. */
+  inCart: number;
+  /** El carrito ya es de otro proveedor: no cabe nada de este. */
+  conflict: { slug: string; name: string } | null;
+  /** Producto sin unidades; nunca un kit ni un servicio. */
+  soldOut: boolean;
+  /** Ya está en el carrito todo el stock que había. */
+  complete: boolean;
+};
+
+/**
+ * Todo esto es **derivado** del carrito, no un estado propio: si el visitante lo
+ * vacía desde el panel, los botones de la ficha se destraban solos. Antes de que
+ * `localStorage` esté leído el carrito se ve vacío, así que cada botón nace igual
+ * en el HTML del servidor y en la primera pintada del cliente.
+ *
+ * Lo comparten los dos botones de una ficha —el del equipo y el de su
+ * instalación—, que enseñan lo mismo con distinto tamaño.
+ */
+export function useCartItemState(item: CartItem): CartItemState {
+  const lines = useCartLines();
+
+  const key = cartLineKey(item);
+  const inCart = lines.find((line) => cartLineKey(line) === key)?.quantity ?? 0;
+
+  // Una orden se entrega por un solo proveedor (ver PLAN.md), así que un
+  // carrito ya empezado con otro cierra la puerta hasta que se vacíe.
+  const supplier = cartSupplier(lines);
+
+  return {
+    inCart,
+    conflict: supplier && supplier.slug !== item.supplierSlug ? supplier : null,
+    soldOut: item.stock === 0,
+    complete: item.stock !== null && inCart >= item.stock,
+  };
+}

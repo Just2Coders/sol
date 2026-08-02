@@ -133,6 +133,14 @@ export function CartPanel({ className }: { className?: string }) {
   );
 }
 
+// Cómo se nombra cada tipo en la marginalia de la línea. Fuera del componente:
+// es una tabla fija, no hace falta rearmarla en cada pintada.
+const LINE_KIND: Record<CartLine["type"], string> = {
+  KIT: "kit",
+  PRODUCT: "producto",
+  SERVICE: "instalación",
+};
+
 /**
  * Una línea del panel. El paso de cantidad se topa contra el stock que tenía la
  * ficha al añadirla: es una foto, no la verdad — el stock real se vuelve a
@@ -172,8 +180,10 @@ function CartRow({
           {line.name}
         </Link>
         <p className="text-muted-foreground text-marginalia font-mono">
-          {line.type === "KIT" ? "kit" : "producto"} ·{" "}
-          {formatUsd(line.priceUsd)} c/u
+          {LINE_KIND[line.type]} · {formatUsd(line.priceUsd)}{" "}
+          {/* Una instalación por unidad de obra se cobra "c/panel"; lo demás va
+              por piezas. */}
+          {line.unitLabel ? `c/${line.unitLabel}` : "c/u"}
         </p>
 
         <div className="mt-2 flex flex-wrap items-center justify-between gap-3">

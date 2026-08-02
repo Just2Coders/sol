@@ -1,11 +1,22 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowLeft } from "reicon-react";
+import { List, Shop, Text } from "reicon-react";
 
-import { CatalogGallery } from "@/components/catalog/catalog-gallery";
-import { CatalogPurchasePanel } from "@/components/catalog/catalog-purchase-panel";
-import { getCatalogProduct } from "@/lib/catalog/queries";
+import { CatalogInstallations } from "@/components/catalog/catalog-installations";
+import {
+  CatalogDetailAccordion,
+  CatalogDetailAccordionRow,
+} from "@/components/catalog/detail/detail-accordion";
+import { CatalogDetailHead } from "@/components/catalog/detail/detail-head";
+import { CatalogDetailRow } from "@/components/catalog/detail/detail-row";
+import { CatalogDetailShell } from "@/components/catalog/detail/detail-shell";
+import {
+  CatalogSupplierBlock,
+  CatalogSupplierCoverage,
+} from "@/components/catalog/detail/supplier-block";
+import { CatalogSupplierRelated } from "@/components/catalog/detail/supplier-related";
+import { itemPhotos } from "@/lib/catalog/photos";
+import { getCatalogProduct, getSupplierRelated } from "@/lib/catalog/queries";
 
 type ProductPageProps = { params: Promise<{ slug: string }> };
 
@@ -41,88 +52,93 @@ export default async function ProductPage({ params }: ProductPageProps) {
   const product = await getCatalogProduct((await params).slug);
   if (!product) notFound();
 
+  // Lo demás del proveedor. Necesita su slug, así que va detrás de la ficha;
+  // es una sola lectura corta y ya cacheada.
+  const related = await getSupplierRelated(product.supplier.slug, {
+    type: "PRODUCT",
+    slug: product.slug,
+  });
+
   const specs = Object.entries(product.specs);
+  const photos = itemPhotos(product.images, product.name);
 
-  // El scroll es de la página, no del documento: el header del catálogo se
-  // queda arriba mientras se recorre la ficha (ver app/catalog/layout.tsx).
   return (
-    <main className="px-gutter py-section-sm min-h-0 flex-1 overflow-y-auto">
-      <Link
-        href="/catalog"
-        className="text-muted-foreground hover:text-foreground text-label ease-standard inline-flex items-center gap-2 font-mono transition-colors duration-base"
-      >
-        <ArrowLeft className="size-3.5" aria-hidden />
-        volver al catálogo
-      </Link>
-
-      <div className="lg:gap-grid mt-10 grid gap-12 lg:grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)]">
-        <CatalogGallery images={product.images} alt={product.name} />
-
-        <div>
-          <p className="text-muted-foreground text-marginalia font-mono">
-            producto · {product.supplier.name}
-          </p>
-          <h1 className="text-foreground text-display-2 mt-3">{product.name}</h1>
-
-          {product.description && (
-            <p className="text-muted-foreground text-body-lg mt-6 max-w-[52ch]">
+    <CatalogDetailShell
+      photos={photos}
+      fallbackAlt={product.name}
+      footer={<CatalogSupplierCoverage supplier={product.supplier} />}
+      head={
+        <CatalogDetailHead
+          kind="producto"
+          supplierName={product.supplier.name}
+          name={product.name}
+          priceUsd={product.priceUsd}
+          item={{
+            type: "PRODUCT",
+            id: product.id,
+            slug: product.slug,
+            name: product.name,
+            priceUsd: product.priceUsd,
+            image: product.images[0] ?? null,
+            supplierSlug: product.supplier.slug,
+            supplierName: product.supplier.name,
+            stock: product.stock,
+          }}
+        />
+      }
+    >
+      {/* Lo que se lee primero llega abierto: qué es y qué da. Un valor que no
+          tenga fila —un producto sin descripción— se ignora solo. */}
+      <CatalogDetailAccordion defaultOpen={["description", "specs"]}>
+        {product.description && (
+          <CatalogDetailAccordionRow
+            value="description"
+            label="descripción"
+            icon={Text}
+          >
+            <p className="text-muted-foreground text-body max-w-[60ch]">
               {product.description}
             </p>
-          )}
+          </CatalogDetailAccordionRow>
+        )}
 
-          <div className="mt-8">
-            <CatalogPurchasePanel
-              item={{
-                type: "PRODUCT",
-                id: product.id,
-                slug: product.slug,
-                name: product.name,
-                priceUsd: product.priceUsd,
-                image: product.images[0] ?? null,
-                supplierSlug: product.supplier.slug,
-                supplierName: product.supplier.name,
-                stock: product.stock,
-              }}
-              supplier={product.supplier}
-              note={
-                product.stock > 0 ? (
-                  <p className="text-success text-marginalia font-mono">
-                    en stock · {product.stock}{" "}
-                    {product.stock === 1 ? "unidad" : "unidades"}
-                  </p>
-                ) : (
-                  <p className="text-warning text-marginalia font-mono">
-                    sin stock ahora mismo
-                  </p>
-                )
-              }
-            />
-          </div>
+        <CatalogInstallations
+          installations={product.installations}
+          supplier={product.supplier}
+        />
 
-          {specs.length > 0 && (
-            <section className="mt-12">
-              <h2 className="text-muted-foreground text-label font-mono">
-                ficha técnica
-              </h2>
-              <dl className="border-border mt-4 border-t">
-                {specs.map(([key, value]) => (
-                  <div
-                    key={key}
-                    className="border-border flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1 border-b py-3"
-                  >
-                    <dt className="text-muted-foreground text-body-sm">
-                      {key}
-                    </dt>
-                    <dd className="text-foreground text-data font-mono">
-                      {value}
-                    </dd>
-                  </div>
-                ))}
-              </dl>
-            </section>
-          )}
-        </div>
-      </div>
-    </main>
+        {specs.length > 0 && (
+          <CatalogDetailAccordionRow
+            value="specs"
+            label="ficha técnica"
+            icon={List}
+          >
+            <dl className="border-border border-t">
+              {specs.map(([key, value], index) => (
+                <CatalogDetailRow
+                  key={key}
+                  term={key}
+                  value={value}
+                  last={index === specs.length - 1}
+                />
+              ))}
+            </dl>
+          </CatalogDetailAccordionRow>
+        )}
+
+        <CatalogDetailAccordionRow
+          value="supplier"
+          label="proveedor"
+          icon={Shop}
+        >
+          <CatalogSupplierBlock supplier={product.supplier} />
+        </CatalogDetailAccordionRow>
+      </CatalogDetailAccordion>
+
+      <CatalogSupplierRelated
+        items={related}
+        supplierName={product.supplier.name}
+      />
+    </CatalogDetailShell>
   );
 }

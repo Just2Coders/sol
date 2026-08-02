@@ -33,6 +33,18 @@
   --primary-active: #732f14;
   --primary-disabled: #d9b49d;
 
+  /* acción hipersaturada: el mismo rol de acción, pero a un volumen que puede
+     sostener una página entera de neutros. Es el acento de la home —donde el
+     cuerpo es todo neutro cálido y lo único cromático es lo que se pulsa— y de
+     las exploraciones de landing. El terracota `--primary` sigue siendo el de
+     las pantallas de trabajo (catálogo, cuenta, admin). */
+  --primary-loud: #f2550c;
+  /* Blanco puro, no el hueso del resto del sistema: sobre un naranja de esta
+     saturación el hueso se ensucia y el campo pierde el filo. Es el único
+     blanco literal de la paleta y solo se usa encima de `--primary-loud`. */
+  --primary-loud-foreground: #ffffff;
+  --primary-loud-hover: #d94a12;
+
   /* superficie cálida de apoyo (chips, bandas secundarias) */
   --secondary: #d8be97;
   --secondary-foreground: #2b2a24;
@@ -47,8 +59,14 @@
   --support: #b8c4ac;
   --support-strong: #96a689;
 
-  /* lienzo oscuro: sección o nav a sangre, nunca chrome pequeño */
-  --canvas: #4e5f4a;
+  /* lienzo oscuro: sección o nav a sangre, nunca chrome pequeño.
+     Comparte tono con `--foreground` (la tinta del texto) y no con la familia
+     verde de apoyo: la home cierra con dos bloques oscuros seguidos —"¿Y si el
+     proveedor eres tú?" y el pie— y en verde competían con el terracota de la
+     acción. En tinta, el único color de esas dos secciones es el del botón.
+     El texto encima sí se queda en el verde claro de la familia de apoyo: es
+     lo que impide que el bloque se lea como un rectángulo negro. */
+  --canvas: #2b2a24;
   --canvas-foreground: #d3dcc8;
 
   /* líneas */
@@ -80,14 +98,32 @@
   --chart-4: var(--support-strong);
   --chart-5: var(--secondary);
 
+  /* duotono del catálogo: los dos extremos entre los que se comprime el rango
+     tonal de una foto de proveedor. Las altas luces caen en el papel de la
+     ficha —el fondo blanco de estudio desaparece y el producto queda impreso
+     sobre la hoja— y las sombras en un verde casi negro de la familia del
+     lienzo. El acento terracota no entra aquí a propósito: es el color de la
+     acción, y una pared de fotos en terracota lo dejaría sin significar nada.
+
+     Las luces apuntan a `--card` y no a `--background`: el papel de la ficha,
+     no el del documento. Con el fondo de la página, la foto se leía como una
+     continuación del header en vez de pertenecer a la columna de datos que
+     tiene al lado. Se destapa a color bajo el cursor; ver
+     components/catalog/catalog-media.tsx. */
+  --photo-shadow: #232d20;
+  --photo-highlight: var(--card);
+
   /* scrim del hero: oscurece la foto en el tono del lienzo, nunca en negro, así
-     la imagen pertenece a la paleta en vez de flotar sobre ella. */
+     la imagen pertenece a la paleta en vez de flotar sobre ella.
+     Solo pesa abajo: el header ya no se monta sobre la foto —es una barra
+     sólida encima de ella— así que oscurecer la parte alta solo restaba cielo.
+     Todo el texto del hero cae en el tercio inferior, que es donde sube la
+     opacidad. */
   --scrim-hero: linear-gradient(
     to bottom,
-    rgba(24, 33, 22, 0.5),
-    rgba(24, 33, 22, 0) 30%,
-    rgba(24, 33, 22, 0) 55%,
-    rgba(26, 35, 24, 0.82)
+    rgba(26, 35, 24, 0) 0%,
+    rgba(26, 35, 24, 0.1) 50%,
+    rgba(26, 35, 24, 0.7) 100%
   );
 
   /* familias: se cargan con next/font en app/layout.tsx, que expone
@@ -127,6 +163,9 @@
   --color-primary-hover: var(--primary-hover);
   --color-primary-active: var(--primary-active);
   --color-primary-disabled: var(--primary-disabled);
+  --color-primary-loud: var(--primary-loud);
+  --color-primary-loud-foreground: var(--primary-loud-foreground);
+  --color-primary-loud-hover: var(--primary-loud-hover);
   --color-secondary: var(--secondary);
   --color-secondary-foreground: var(--secondary-foreground);
 
@@ -137,6 +176,12 @@
   --color-support-strong: var(--support-strong);
   --color-canvas: var(--canvas);
   --color-canvas-foreground: var(--canvas-foreground);
+  --color-photo-shadow: var(--photo-shadow);
+  --color-photo-highlight: var(--photo-highlight);
+
+  /* El scrim es un degradado, así que su namespace no es el de color sino el
+     de background-image: se usa como `bg-scrim-hero`, nunca como style inline. */
+  --background-image-scrim-hero: var(--scrim-hero);
 
   --color-border: var(--border);
   --color-border-strong: var(--border-strong);
@@ -183,16 +228,40 @@
   --shadow-lg: var(--shadow-lg);
 
   /* Tipografía: un rol, una utilidad. `text-display-1` ya trae tamaño,
-     interlineado, tracking y peso — no hace falta añadirle font-bold. */
-  --text-display-1: clamp(44px, 6.2vw, 96px);
-  --text-display-1--line-height: 1;
-  --text-display-1--letter-spacing: -0.03em;
+     interlineado, tracking y peso — no hace falta añadirle font-bold.
+     Los `vw` de cada clamp están calculados para caer clavados en el tope a
+     1440px, el ancho al que está dibujada la home: 4.45vw = 64px, 3.06vw =
+     44px, etc. Así el desktop coincide con el diseño y por debajo la escala
+     baja sola sin un solo breakpoint. */
+  --text-display-1: clamp(40px, 4.45vw, 64px);
+  --text-display-1--line-height: 1.02;
+  --text-display-1--letter-spacing: -0.02em;
   --text-display-1--font-weight: 700;
-  --text-display-2: clamp(36px, 4.6vw, 68px);
+  --text-display-2: clamp(32px, 3.06vw, 44px);
   --text-display-2--line-height: 1.05;
-  --text-display-2--letter-spacing: -0.03em;
+  --text-display-2--letter-spacing: -0.02em;
   --text-display-2--font-weight: 700;
-  --text-heading-1: 32px;
+  --text-display-3: clamp(30px, 2.78vw, 40px);
+  --text-display-3--line-height: 1.05;
+  --text-display-3--letter-spacing: -0.02em;
+  --text-display-3--font-weight: 700;
+  --text-display-4: clamp(28px, 2.23vw, 32px);
+  --text-display-4--line-height: 1.1;
+  --text-display-4--letter-spacing: -0.02em;
+  --text-display-4--font-weight: 700;
+  /* La marca dibujada a sangre, recortada por los dos bordes del viewport: no
+     es un titular, es grafismo, y por eso mide en vw y no en px. */
+  --text-wordmark: 26.4vw;
+  --text-wordmark--line-height: 1;
+  --text-wordmark--letter-spacing: -0.03em;
+  --text-wordmark--font-weight: 800;
+  /* La marca a tamaño de barra: 20px en negrita, que no es ningún peldaño de
+     la escala de titulares — es un logotipo escrito con la fuente. */
+  --text-brand: 20px;
+  --text-brand--line-height: 1;
+  --text-brand--letter-spacing: -0.01em;
+  --text-brand--font-weight: 700;
+  --text-heading-1: 28px;
   --text-heading-1--line-height: 1.15;
   --text-heading-1--letter-spacing: -0.02em;
   --text-heading-1--font-weight: 700;
@@ -210,15 +279,24 @@
   --text-body--line-height: 1.55;
   --text-body-sm: 15px;
   --text-body-sm--line-height: 1.55;
+  /* El peldaño de las listas densas: los datos del proveedor, la letra de las
+     condiciones. Cuerpo, no marginalia — se lee, no se consulta. */
+  --text-body-xs: 14px;
+  --text-body-xs--line-height: 1.5;
   --text-caption: 13px;
   --text-caption--line-height: 1.4;
   /* mono: labels, marginalia y datos técnicos — tracking amplio */
   --text-label: 12px;
-  --text-label--line-height: 1.6;
+  --text-label--line-height: 1.5;
   --text-label--letter-spacing: 0.12em;
   --text-marginalia: 11px;
-  --text-marginalia--line-height: 2;
+  --text-marginalia--line-height: 1.5;
   --text-marginalia--letter-spacing: 0.12em;
+  /* El escalón más bajo, solo para la etiqueta cosida a un objeto: la insignia
+     de la ficha, el tipo de kit dentro de la barra oscura. Nunca en una frase. */
+  --text-micro: 10px;
+  --text-micro--line-height: 1.4;
+  --text-micro--letter-spacing: 0.1em;
   --text-data: 13px;
   --text-data--line-height: 1.4;
   --text-data--letter-spacing: 0.02em;
@@ -227,11 +305,34 @@
   --text-nav: 14px;
   --text-nav--font-weight: 500;
 
+  /* Tracking suelto. Los roles de texto ya traen el suyo; estas utilidades
+     existen para las piezas que lo rompen a propósito — una etiqueta en caja
+     alta, un nombre de producto espaciado, un rótulo mono apretado. */
+  --tracking-display: -0.03em;
+  --tracking-heading: -0.01em;
+  --tracking-mono-tight: -0.02em;
+  /* Cuatro peldaños de apertura, que es lo que separa un dato de un rótulo:
+     xs para cifras y datelines (casi cerrado, se lee de corrido), sm para
+     etiquetas cortas en caja alta, md para nav y botones, lg para el antetítulo
+     de sección y los pies de foto, que son los que más aire piden. */
+  --tracking-mono-xs: 0.02em;
+  --tracking-mono-sm: 0.05em;
+  --tracking-mono-md: 0.1em;
+  --tracking-mono-lg: 0.14em;
+  --tracking-mono: 0.12em;
+  --tracking-mono-mid: 0.18em;
+  --tracking-mono-loud: 0.2em;
+  --tracking-mono-vast: 0.6em;
+
   /* Espaciado: la escala de 4px es la nativa de Tailwind (p-4 = 16px). Aquí
      solo las literales de layout del sketch, que no caen en esa grilla. */
   --spacing-gutter: 40px;
   --spacing-section-sm: 56px;
   --spacing-section-md: 96px;
+  /* El aire de la primera sección de la home, que además tiene que absorber el
+     buscador que sobresale del hero. No es `section-md` + un margen suelto:
+     es una medida sola, para que mover el buscador no descuadre la sección. */
+  --spacing-section-lg: 150px;
   --spacing-cta-top: 140px;
   --spacing-cta-bot: 120px;
   --spacing-header: 16px;

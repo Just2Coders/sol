@@ -30,14 +30,19 @@ app/                    Presentación: rutas, páginas (RSC) y Server Actions
   actions/              Server Actions ("use server") — punto de entrada de mutaciones
   admin/                Panel de administración (rol ADMIN): zones, suppliers, products, kits
   account/              Área del cliente autenticado
-  catalog/              Catálogo público: listado, /products/[slug], /kits/[slug]
+  catalog/              Catálogo público: listado y fichas de /products/[slug],
+                        /kits/[slug] y /services/[slug]
   globals.css           Design system: roles de color/tipografía y su registro en Tailwind
 components/
   ui/                   Primitivos de shadcn/ui (button, input, card, ...)
   auth/                 Componentes de cliente por feature (formularios de auth)
   admin/                Componentes de cliente del panel admin (formularios CRUD)
   landing/              Home: hero, mapa de provincias, barra del sitio
-  catalog/              Catálogo público: filtros, tarjeta, galería, panel de compra
+  catalog/              Catálogo público: filtros, tarjeta, foto, instalaciones
+    detail/             La ficha a dos columnas: armazón, columna de fotos,
+                        cabecera fija (identidad + compra), acordeón de
+                        secciones, componentes del kit, proveedor y su cobertura,
+                        y la tira de "más de este proveedor"
   cart/                 Carrito: botón de la ficha y panel lateral del header
 lib/                    Lógica de servidor reutilizable (NO específica de una ruta)
   cart/
@@ -50,6 +55,7 @@ lib/                    Lógica de servidor reutilizable (NO específica de una 
     migrations/         SQL generado por drizzle-kit (versionado en git)
   catalog/
     filters.ts          Los filtros del catálogo tal como viven en la URL (puro)
+    photos.ts           La columna de fotos de una ficha y sus anclas (puro)
     queries.ts          Lecturas del catálogo público (solo activo, por zona)
   products/queries.ts   Lecturas de productos (panel admin)
   kits/queries.ts       Lecturas de kits con sus componentes (panel admin)
@@ -110,6 +116,43 @@ módulo en vez de una query con banderas:
   grilla no sepa de qué tabla viene cada tarjeta. Nunca expone datos internos
   del proveedor (`payoutInfo`, teléfono, notas).
 
+### La ficha son dos columnas y tres regiones que no se empujan
+
+Fotos a la izquierda, datos a la derecha, y en escritorio ninguna de las dos mueve
+a la otra: recorrer las fotos no debería empujar el precio fuera de pantalla. En
+móvil vuelve a haber un solo scroll y la tira de fotos se acuesta como carrusel
+con imán. Todo está en `components/catalog/detail/`, y la columna de fotos **no se
+hidrata**: el paso de foto lo hace `scroll-snap` y el salto desde el nombre de un
+componente es un ancla de verdad (`lib/catalog/photos.ts` calcula el id en el
+único sitio que lo conocen las dos columnas).
+
+La columna derecha se reparte en tres, y solo una se mueve: la **cabecera**
+(`detail-head.tsx`: qué es, cuánto cuesta y el botón) queda clavada arriba porque
+es la decisión de compra; el **pie** (`CatalogSupplierCoverage`) queda clavado
+abajo porque la cobertura decide si ese botón sirve de algo donde vive quien mira;
+y entre los dos scrollea lo demás — el acordeón de secciones y la tira de más
+cosas del proveedor. Las secciones van plegadas (`detail-accordion.tsx`) para que
+la columna quepa de un vistazo, y la jerarquía de líneas es lo que las separa: el
+pliegue entre filas es `border-border-strong` y todo filete de dentro de una fila
+es `border-border`, un peldaño por debajo.
+
+Las fotos las trae cada proveedor, así que una pared mezcla estudio con fondo
+blanco, render y foto de obra. `CatalogMedia` con `duotone` las imprime en la
+paleta con dos capas de mezcla —`--photo-highlight` recorta las altas luces al
+papel de la ficha y `--photo-shadow` levanta los negros— y devuelve el color bajo
+el cursor. La capa del papel se queda puesta siempre: es la que hace desaparecer
+el fondo blanco de estudio, y recortar altas luces no le quita color a un
+producto. El duotono completo solo se monta donde hay cursor para deshacerlo
+(`pointer-fine`).
+
+Una ficha lee dos cosas —el item y las instalaciones que ofrece— y las pide **en
+paralelo**: `getInstallationsFor` entra por el slug del item y no por su id
+justamente para no depender de la otra consulta, porque con Neon por HTTP dos
+saltos en serie son dos latencias. Ojo con `extras` de la query relacional de
+drizzle: reescribe las referencias de columna apuntándolas a la tabla exterior,
+así que una subconsulta correlacionada contra otras tablas **no** se puede
+escribir ahí.
+
 Los filtros del catálogo viven en la **URL**, no en estado de cliente
 (`lib/catalog/filters.ts` los traduce en ambos sentidos): así una búsqueda se
 comparte, el botón atrás deshace filtro a filtro y la página se sigue
@@ -152,10 +195,18 @@ Definido en [`lib/db/schema.ts`](../lib/db/schema.ts). Entidades principales:
   Cobertura por zona vía `supplier_zones`. `payoutInfo` = cómo se le liquida.
 - **products** / **kits** — catálogo de cada proveedor. Un kit agrupa productos
   (`kit_items`) y tiene su propio precio.
+- **services** — mano de obra (instalación) del mismo proveedor, clasificada por
+  **service_categories** (tabla, no enum: el admin añade categorías sin deploy).
+  Tabla aparte de `products` porque un servicio no tiene existencias ni entrega y
+  su precio puede ser cerrado (`FLAT`) o por unidad de obra (`PER_UNIT` +
+  `unitLabel`). **installation_offers** dice qué servicio se ofrece junto a qué
+  producto o kit — sin filas ahí, el servicio se sigue vendiendo solo.
 - **orders** — una orden pertenece a **un solo proveedor** (simplifica la
-  liquidación). No se mezclan proveedores en un mismo pedido.
+  liquidación). No se mezclan proveedores en un mismo pedido. Que el instalador
+  sea el proveedor es lo que deja esta regla intacta al vender instalación.
 - **order_items** — líneas con **snapshot** de nombre y precio al momento de la
-  compra; `itemId` es una FK "blanda" a `products.id` o `kits.id` según `itemType`.
+  compra; `itemId` es una FK "blanda" a `products.id`, `kits.id` o `services.id`
+  según `itemType`.
 - **payments** — pago por **Zelle** (MVP) o Suby.fi (futuro), con su propio ciclo
   de verificación manual por el admin.
 

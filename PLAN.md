@@ -26,8 +26,13 @@ products       id, supplier_id, name, slug, description, specs (jsonb), price_us
                stock, images[], active
 kits           id, supplier_id, name, slug, description, price_usd, images[], active
 kit_items      kit_id, product_id, quantity       ← un kit = combo de productos del proveedor
+service_categories  id, name, slug, description, position   ← paneles · kit completo · cableado
+services       id, supplier_id, category_id, name, slug, description,
+               pricing (FLAT | PER_UNIT), price_usd, unit_label?, images[], active
+installation_offers service_id, target_type (PRODUCT | KIT), target_id
+                                                   ← qué instalación se ofrece con qué item
 orders         id, user_id, supplier_id, zone_id, status, subtotal, total, created_at
-order_items    order_id, item_type (PRODUCT | KIT), item_id, name_snapshot,
+order_items    order_id, item_type (PRODUCT | KIT | SERVICE), item_id, name_snapshot,
                price_snapshot, quantity
 payments       id, order_id, method (ZELLE | SUBY), status, zelle_reference,
                receipt_url, reported_at, confirmed_at, confirmed_by
@@ -36,6 +41,8 @@ payments       id, order_id, method (ZELLE | SUBY), status, zelle_reference,
 Decisiones clave:
 
 - **Una orden = un proveedor.** El carrito se limita a items de un solo proveedor (si el usuario mezcla, se le avisa). Esto simplifica enormemente la liquidación manual que harás a cada proveedor.
+- **La instalación es un servicio, no un producto.** Vive en su propia tabla porque no tiene existencias ni entrega, y su precio puede ser cerrado (`FLAT`) o por unidad de obra (`PER_UNIT`: por panel, por metro de cable). Se vende de dos maneras con el mismo modelo: **sola** —es un item más del catálogo, con su ficha— o **añadida a la compra** de un producto o kit, y ahí `installation_offers` dice qué instalación se ofrece con qué item. La presta el **mismo proveedor** que vende (un instalador puro es un proveedor sin productos): así sigue valiendo la regla de un proveedor por orden, y qué instalaciones se pueden contratar en cada zona ya lo resuelve `supplier_zones`. Las categorías las administra el admin en una tabla, no son un enum: añadir "mantenimiento" no debería requerir un deploy.
+  _No hay servicios "a presupuestar": un item sin precio no puede ser línea de carrito, así que necesitaría su propio flujo solicitud → cotización. Cuando haga falta, es un valor más de `service_pricing` y un módulo nuevo._
 - **Snapshots en `order_items`**: se copia nombre y precio al momento de la compra, para que cambios posteriores de precio no alteren órdenes viejas.
 - **Estados de orden**: `PENDING_PAYMENT → PAYMENT_REPORTED → PAID → COMPLETED` (+ `CANCELLED`).
 - **Estados de pago**: `PENDING → REPORTED → CONFIRMED / REJECTED`.
@@ -81,7 +88,7 @@ Decisiones clave:
       notas, info de liquidación.
 - [x] Asignación de zonas de cobertura a cada proveedor.
 
-### Etapa 4 — Panel admin: productos y kits (2 días) ✅
+### Etapa 4 — Panel admin: productos, kits y servicios (2 días)
 - [x] CRUD de productos por proveedor: precio, stock, specs, activar/desactivar.
 - [x] Subida de imágenes a Vercel Blob (múltiples fotos por producto).
       *Los bytes van del navegador a Blob (`@vercel/blob/client`);
@@ -89,6 +96,11 @@ Decisiones clave:
       El logo del proveedor sigue registrándose por URL.*
 - [x] CRUD de kits: seleccionar productos del proveedor + cantidades, precio propio del kit.
 - [x] Validación: un kit solo puede contener productos de su mismo proveedor.
+- [ ] CRUD de categorías de servicio (nombre, orden en que se listan).
+- [ ] CRUD de servicios de instalación por proveedor: categoría, precio `FLAT` o
+      `PER_UNIT` con su unidad, activar/desactivar.
+- [ ] Asignar a qué productos/kits se ofrece cada instalación (`installation_offers`),
+      con la misma validación que los kits: solo items del mismo proveedor.
 
 ### Etapa 5 — Catálogo público (2–3 días)
 - [ ] Landing con propuesta de valor y selector de zona (persistido en cookie).
@@ -100,6 +112,13 @@ Decisiones clave:
       alimenta el filtro del catálogo; queda la página propia de proveedores.*
 - [x] Catálogo filtrado por zona, con filtros por proveedor, tipo (producto/kit) y rango de precio.
 - [x] Página de detalle de producto (galería, specs, proveedor) y de kit (qué incluye).
+- [x] Ficha del servicio en `/catalog/services/[slug]`: la instalación contratada
+      sola, con cómo se cobra (fijo o por unidad de obra).
+- [ ] Los servicios entran al **listado**: tercera rama de la unión y contador
+      propio en el selector (Todo · Kits · Productos · Instalación). Hoy la ficha
+      existe y se llega a ella desde el equipo, pero no sale en la grilla; por eso
+      `CATALOG_TYPES` (el filtro) sigue teniendo dos valores y `PURCHASABLE_TYPES`
+      (lo que cabe en el carrito) tiene tres.
 - [x] SEO básico: metadata, slugs limpios, Open Graph.
 
 ### Etapa 6 — Carrito y checkout (2 días)
@@ -111,7 +130,12 @@ Decisiones clave:
       *El store ya la impone —`add` rechaza un item de otro proveedor— y la
       ficha lo explica con el atajo para vaciar el carrito. Queda repasar el
       aviso cuando exista el checkout.*
+- [x] Bloque "añadir instalación" en la ficha de producto/kit (lo que diga
+      `installation_offers`) y línea de servicio en el carrito: sin stock, y en
+      `PER_UNIT` la cantidad son unidades de obra, no piezas.
 - [ ] Checkout: resumen, datos de contacto/entrega, confirmación → crea orden `PENDING_PAYMENT`.
+      Si la orden lleva instalación, la dirección de entrega es la de la obra; la
+      fecha se coordina a mano en esta fase.
 - [ ] Página "Mis órdenes" en la cuenta del usuario, con estado en tiempo real.
 
 ### Etapa 7 — Pago manual Zelle (2 días) ★ meta de la fase
@@ -130,6 +154,11 @@ Decisiones clave:
 **Total estimado: ~2 a 3 semanas** de trabajo enfocado.
 
 ## Fase 2 (fuera de alcance por ahora)
+- **Agendar la instalación**: fecha y ventana horaria, con sus estados de orden
+  (`SCHEDULED` → `INSTALLED`) en una tabla `order_installations` aparte. En Fase 1
+  se coordina por teléfono, igual que la verificación del Zelle.
+- **Servicios a presupuestar** (`pricing = QUOTE`): solicitud del cliente →
+  cotización del admin → orden. No cabe en el carrito, es un flujo propio.
 - Integración de pago automático con suby.fi (todo a la cuenta central), reutilizando `payments.method = SUBY`.
 - Liquidaciones a proveedores registradas dentro del sistema.
 - Portal para que los proveedores gestionen sus propios productos.
