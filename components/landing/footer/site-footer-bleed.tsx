@@ -45,24 +45,24 @@ export async function SiteFooterBleed() {
             ]}
           />
           <div className="flex flex-col gap-2.5">
-            <h3 className="text-marginalia tracking-mono-lg text-canvas-foreground font-mono uppercase">
+            <h3 className="text-marginalia tracking-mono-lg text-foreground-inverse font-mono uppercase">
               mapa-índice
             </h3>
-            <p className="text-data text-canvas-foreground font-mono">
-              {covered} provincias con proveedor · el resto, en camino.
+            <p className="text-data text-foreground-inverse font-mono">
+              {covered} provincias con proveedor · seguimos sumando.
             </p>
           </div>
         </nav>
 
         <div className="border-canvas-foreground flex flex-wrap items-center justify-between gap-x-6 gap-y-2 border-t pt-6">
-          <p className="text-marginalia text-canvas-foreground font-mono">
+          <p className="text-marginalia text-foreground-inverse font-mono">
             © {new Date().getFullYear()} Solaris
           </p>
           <ul className="flex flex-wrap items-center gap-6">
             {FINE_PRINT.map((line) => (
               <li
                 key={line}
-                className="text-marginalia text-canvas-foreground font-mono"
+                className="text-marginalia text-foreground-inverse font-mono"
               >
                 {line}
               </li>
@@ -72,11 +72,11 @@ export async function SiteFooterBleed() {
       </div>
 
       <div className="border-canvas-foreground px-gutter flex flex-col items-center gap-5 border-t pt-12 pb-14">
-        <p className="text-display-3 text-canvas-foreground text-center">
+        <p className="text-display-3 text-foreground-inverse text-center">
           ¿Listo para dejar el apagón atrás?
         </p>
         <FlatCta href="/catalog?type=kit" className="mt-2">
-          Explora los kits
+          Ver kits con instalación
         </FlatCta>
       </div>
 
@@ -85,7 +85,7 @@ export async function SiteFooterBleed() {
           de las letras — arriba les corta el aire, abajo la panza. */}
       <div
         aria-hidden
-        className="text-canvas-foreground relative h-[15.3vw] overflow-clip"
+        className="text-foreground-inverse relative h-[15.3vw] overflow-clip"
       >
         <span className="text-wordmark absolute -top-[5.6vw] -left-[7vw] whitespace-nowrap">
           SOLARIS
@@ -98,7 +98,7 @@ export async function SiteFooterBleed() {
 function FooterColumn({ title, links }: { title: string; links: FooterLink[] }) {
   return (
     <div className="flex flex-col gap-3">
-      <h3 className="text-marginalia tracking-mono-lg text-canvas-foreground font-mono uppercase">
+      <h3 className="text-marginalia tracking-mono-lg text-foreground-inverse font-mono uppercase">
         {title}
       </h3>
       <ul className="flex flex-col gap-3">
@@ -106,7 +106,7 @@ function FooterColumn({ title, links }: { title: string; links: FooterLink[] }) 
           <li key={`${link.label}-${link.href}`}>
             <Link
               href={link.href}
-              className="text-body-sm text-canvas-foreground underline-offset-4 hover:underline"
+              className="text-body-sm text-foreground-inverse underline-offset-4 hover:underline"
             >
               {link.label}
             </Link>

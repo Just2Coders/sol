@@ -6,7 +6,7 @@ import { SectionHeading } from "./section-heading";
 import { TRUST_TEAMS, TRUST_TERMS, type TrustTeam } from "./trust-data";
 
 /**
- * "Gente real, instalando cerca de ti".
+ * "Quién va a entrar a tu casa".
  *
  * Un solo bloque de tinta con todo dentro y las piezas separadas por un pelo:
  * el fondo del contenedor es el foreground y los hijos van en el fondo de
@@ -26,9 +26,9 @@ export function Trust() {
   return (
     <section className="bg-background px-gutter py-section-md">
       <SectionHeading
-        eyebrow="confianza"
-        title="Gente real, instalando cerca de ti."
-        body="Así funciona antes de que un proveedor entre a tu casa."
+        eyebrow="quién instala"
+        title="Quién va a entrar a tu casa."
+        body="Un equipo con nombre, provincia y garantía — no un número de teléfono suelto."
       />
 
       <div className="bg-foreground mt-14 flex flex-col gap-px">

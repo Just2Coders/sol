@@ -78,11 +78,11 @@ export const TRUST_TERMS: TrustTerm[] = [
   },
   {
     question: "si algo falla",
-    answer: "El proveedor responde por su garantía; Solaris media si hay reclamo.",
+    answer: "El proveedor responde por su garantía; Solaris media el reclamo.",
   },
   {
     question: "cómo se paga",
     answer:
-      "A través de Solaris, con factura — nunca en efectivo directo al instalador.",
+      "A Solaris, con factura — nunca en efectivo al instalador, nunca por fuera.",
   },
 ];

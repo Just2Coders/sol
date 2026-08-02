@@ -47,7 +47,7 @@ export function KitProviders() {
       <SectionHeading
         eyebrow={`resultados · ${kit.name.toLowerCase()}`}
         title="Elige quién te lo instala"
-        body={`Mismo ${kit.name.toLowerCase()} — ${kit.capacityKwh} kWh, respaldo ${kit.backup} — ofrecido por distintos proveedores. Comparamos precio, tiempo de respuesta y garantía.`}
+        body={`El mismo ${kit.name.toLowerCase()} — ${kit.capacityKwh} kWh, ${kit.backup} — montado por tres proveedores distintos. Lo que cambia es el precio y cuánto aguanta.`}
         titleClassName="text-display-2"
         action={
           <FlatCta href="/catalog?type=kit" tone="outline" size="md">
@@ -103,7 +103,7 @@ function OfferCard({ offer, kitName }: { offer: KitOffer; kitName: string }) {
         href={href}
         className="text-label tracking-mono-sm text-primary-loud hover:text-primary-loud-hover ease-standard mt-auto inline-flex items-center gap-2 pt-3.5 font-mono uppercase transition-colors duration-base"
       >
-        Ver este kit
+        Ver esta oferta
         <ArrowRight aria-hidden className="size-4" />
       </Link>
     </article>
