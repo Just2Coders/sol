@@ -19,6 +19,7 @@ const VARIANTS = [
   { href: "/design/terroir", label: "A · Terroir" },
   { href: "/design/workshop", label: "B · Taller" },
   { href: "/design/media", label: "C · Media" },
+  { href: "/design/bois-franc", label: "D · Bois-Franc" },
 ];
 
 export default function DesignLayout({

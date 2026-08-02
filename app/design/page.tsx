@@ -30,6 +30,14 @@ const VARIANTS = [
       "El color se reparte por función: el cuerpo se queda en el casi negro y todo lo demás —titulares, cifras, precios, rótulos— se va a terracota. Escala intermedia (68 / 40) y la anatomía de ficha de Chapitre dentro de la contención de Dix Hectares.",
     risk: "Por definición no tiene el gesto extremo de las otras dos. Si se ejecuta sin nervio, es la que se puede confundir con la landing de siempre, mejor peinada.",
   },
+  {
+    href: "/design/bois-franc",
+    code: "D",
+    name: "Bois-Franc",
+    decision:
+      "La más literal a la referencia: casi negro en todo el cuerpo, un solo naranja hipersaturado racionado al CTA y al chip del kit marcado, y el hero pintado encima de la foto con scrim en vez de separado de ella. El verde canvas que ya usa la home real para proveedores se extiende también al pie y a un FAQ nuevo, de acordeón de verdad.",
+    risk: "Con dos secciones seguidas en el mismo lienzo oscuro (proveedores, FAQ y pie), la página cierra en un bloque largo de un solo color. Es la decisión de la home real hoy, no un descuido — pero aquí dura tres secciones en vez de una.",
+  },
 ];
 
 /**
@@ -45,10 +53,10 @@ export default function DesignIndexPage() {
         banco de exploraciones · no es la home
       </p>
       <h1 className="text-display-2 text-foreground mt-4 max-w-[18ch]">
-        Tres landings, tres apuestas.
+        Cuatro landings, cuatro apuestas.
       </h1>
       <p className="text-body-lg text-muted-foreground mt-5 max-w-[60ch]">
-        Las tres llevan la misma copy de producción y las mismas correcciones
+        Las cuatro llevan la misma copy de producción y las mismas correcciones
         obligatorias: radio 0, CTA ancho y bajo en caja alta, sección de
         confianza, fotografía en el comparador, algo que cruce el gutter y
         ninguna sección contigua con el mismo fondo. Lo que cambia es la
