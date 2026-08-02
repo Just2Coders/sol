@@ -15,8 +15,9 @@ import { cn } from "@/lib/utils";
  * El padding vertical es asimétrico a propósito: las versalitas no tienen
  * descendentes, así que centrarlas por la caja las deja ópticamente bajas.
  *
- * Tono y tamaño son ejes separados: el mismo `loud` aparece a tamaño de hero y
- * a tamaño de ficha de equipo, y la barra usa `ink` al tamaño intermedio.
+ * Tono y tamaño son ejes separados: el mismo `loud` aparece a tamaño de hero,
+ * de barra y de ficha de equipo — `ink` queda para una acción secundaria que
+ * necesita seguir siendo un campo sólido sin competir con la principal.
  */
 
 export type CtaTone = "loud" | "ink" | "outline";
@@ -26,11 +27,13 @@ const TONE: Record<CtaTone, string> = {
   // El acento hipersaturado, reservado en exclusiva a la acción principal.
   loud: "bg-primary-loud text-primary-loud-foreground hover:bg-primary-loud-hover",
   // Campo de tinta: la acción que no compite con la principal pero sigue siendo
-  // un campo sólido — hoy, "Vender en Solaris" en la barra.
+  // un campo sólido.
   ink: "bg-foreground text-background hover:bg-primary-loud hover:text-primary-loud-foreground",
   // Solo el filete: la salida lateral de una sección ("Ver todos los kits").
+  // Al pasar por encima se llena del mismo acento que los otros dos tonos: en
+  // esta página el hover siempre lleva al naranja, nunca a la tinta.
   outline:
-    "border border-current text-foreground hover:bg-foreground hover:text-background",
+    "border border-current text-foreground hover:border-primary-loud hover:bg-primary-loud hover:text-primary-loud-foreground",
 };
 
 const SIZE: Record<CtaSize, string> = {

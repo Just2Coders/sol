@@ -48,9 +48,9 @@ export function SupplierCtaBand() {
       className="bg-canvas px-gutter py-section-md flex scroll-mt-8 flex-col items-center"
     >
       <div className="flex w-full max-w-190 flex-col items-center gap-6 text-center">
-        <p className="text-label tracking-mono-lg text-canvas-foreground font-mono uppercase">
+        {/* <p className="text-label tracking-mono-lg text-canvas-foreground font-mono uppercase">
           proveedores
-        </p>
+        </p> */}
         <h2
           id="supplier-band-title"
           className="text-display-3 text-canvas-foreground"
@@ -58,9 +58,9 @@ export function SupplierCtaBand() {
           ¿Y si el proveedor eres tú?
         </h2>
         <p className="text-body text-canvas-foreground">
-          Solaris no vende paneles: los pone donde los buscan. Publicas tus kits,
-          decides en qué provincias trabajas — el cobro y la factura los llevamos
-          nosotros.
+          Solaris no vende paneles: te pone delante de quien los busca. Publicas
+          tus kits, decides en qué provincias instalas — el cobro y la factura
+          los llevamos nosotros.
         </p>
 
         {!open && (
@@ -187,7 +187,7 @@ function SentNotice() {
       <Check aria-hidden className="text-success size-8" />
       <p className="text-foreground text-heading-2 mt-4">Recibido.</p>
       <p className="text-muted-foreground text-body mt-2">
-        Te escribimos por el contacto que dejaste para ver qué vendes y en qué
+        Te escribimos al contacto que dejaste para ver qué vendes y en qué
         provincias puedes instalar.
       </p>
     </div>

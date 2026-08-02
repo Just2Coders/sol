@@ -35,14 +35,17 @@ export function Hero() {
       <div aria-hidden className="bg-scrim-hero absolute inset-0" />
 
       <div className="px-gutter relative z-10 flex flex-col items-center pb-32 text-center">
-        <p className="text-foreground-inverse text-data tracking-mono-lg font-mono uppercase">
-          kit-01 · 3.2 kWh / respaldo 8 h
-        </p>
+     
         <h1 className="text-foreground-inverse text-display-1 mt-6 max-w-225">
-          El sol ya trabaja para tu casa.
+          Cuando se va la luz, tu casa sigue encendida.
         </h1>
+        <p className="text-foreground-inverse text-body-lg mt-6 max-w-155">
+          Kits solares con paneles, inversor, baterías e instalación incluida.
+          Te los monta un proveedor de tu provincia y el pago va por Solaris,
+          con factura.
+        </p>
         <FlatCta href="/catalog?type=kit" className="mt-8">
-          Explora los kits
+          Ver kits con instalación
         </FlatCta>
       </div>
 

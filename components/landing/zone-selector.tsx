@@ -2,7 +2,7 @@ import { getProvinceCoverage } from "@/lib/zones/coverage";
 import { CubaMap } from "./cuba-map";
 
 /**
- * "¿Dónde instalas?" — el filtro central del producto, con el peso visual que
+ * "¿Llegamos a tu provincia?" — el filtro central del producto, con el peso que
  * merece: la isla entera a todo el ancho, las provincias con proveedores en el
  * color de apoyo y las que faltan apagadas en la superficie muted.
  *
@@ -16,10 +16,12 @@ export async function ZoneSelector() {
   return (
     <section className="px-gutter py-section-md">
       <div className="max-w-[52ch]">
-        <h2 className="text-foreground text-display-2">¿Dónde instalas?</h2>
+        <h2 className="text-foreground text-display-2">
+          ¿Llegamos a tu provincia?
+        </h2>
         <p className="text-muted-foreground text-body-lg mt-5">
-          Cada proveedor trabaja su propio territorio. Marca tu provincia y te
-          mostramos quién puede llegar hasta tu casa.
+          Cada proveedor instala solo donde tiene equipo. Marca tu provincia y
+          verás quién puede llegar hasta tu casa.
         </p>
       </div>
 

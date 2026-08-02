@@ -338,14 +338,16 @@
   --spacing-header: 16px;
   --spacing-grid: 48px;
 
-  /* Motion: transiciones cortas y calmadas, nunca springs ni bounces. Los
+  /* Motion: transiciones calmadas, nunca springs ni bounces. La curva arranca
+     rápido y frena largo —toda la duración se va en el final del recorrido—,
+     que es lo que hace que un movimiento se lea suave y no mecánico. Los
      defaults se pisan para que un `transition` a secas salga con este ritmo. */
-  --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
-  --transition-duration-fast: 120ms;
-  --transition-duration-base: 180ms;
-  --transition-duration-slow: 280ms;
-  --default-transition-duration: 180ms;
-  --default-transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-standard: cubic-bezier(0.22, 1, 0.36, 1);
+  --transition-duration-fast: 150ms;
+  --transition-duration-base: 220ms;
+  --transition-duration-slow: 400ms;
+  --default-transition-duration: 220ms;
+  --default-transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 @layer base {

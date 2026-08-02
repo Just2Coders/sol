@@ -31,7 +31,7 @@ export function KitFinder({ className }: { className?: string }) {
   return (
     <div className={cn("px-gutter flex justify-center", className)}>
       <div className="bg-card border-foreground flex flex-wrap items-center justify-center gap-x-7 gap-y-4 border px-7 py-5">
-        <p className="text-caption text-foreground font-bold">Encuentra tu kit</p>
+        <p className="text-caption text-foreground font-bold">Elige tu kit</p>
 
         <div
           role="group"

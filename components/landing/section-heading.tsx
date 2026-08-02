@@ -34,9 +34,9 @@ export function SectionHeading({
       )}
     >
       <div className="flex max-w-155 flex-col gap-3.5">
-        <p className="text-label tracking-mono-lg text-foreground font-mono uppercase">
+        {/* <p className="text-label tracking-mono-lg text-foreground font-mono uppercase">
           {eyebrow}
-        </p>
+        </p> */}
         <h2 className={cn("text-display-3 text-foreground", titleClassName)}>
           {title}
         </h2>
