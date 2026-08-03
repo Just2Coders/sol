@@ -33,8 +33,10 @@ export type CartLine = {
   quantity: number;
   /**
    * Quién lo entrega. Va por slug y no por id porque el catálogo público nunca
-   * expone los uuid internos del proveedor, y con el slug basta para lo único
-   * que el cliente decide: si un item cabe en el carrito que ya hay montado.
+   * expone los uuid internos del proveedor, y con el slug basta para lo que el
+   * cliente hace con él: repartir el pedido en grupos y enseñar de quién es
+   * cada uno. Ojo con una línea de servicio: aquí va el proveedor **del
+   * servicio**, que no siempre es el del equipo desde cuya ficha se añadió.
    */
   supplierSlug: string;
   supplierName: string;
@@ -81,15 +83,48 @@ export function cartCount(lines: CartLine[]): number {
   return lines.reduce((sum, line) => sum + line.quantity, 0);
 }
 
+/** Lo que entrega un proveedor dentro del pedido: sus líneas y lo que suman. */
+export type CartGroup = {
+  supplierSlug: string;
+  supplierName: string;
+  lines: CartLine[];
+  subtotalUsd: number;
+};
+
 /**
- * El proveedor del carrito, o `null` si está vacío.
+ * El carrito repartido por quién entrega cada cosa.
  *
- * Una orden es de un solo proveedor (ver `PLAN.md`), así que basta con mirar la
- * primera línea: el store no deja entrar una segunda de otro.
+ * Un pedido puede llevar varios proveedores y se paga una sola vez (ver
+ * `PLAN.md`), pero cada uno entrega y cobra lo suyo: estos grupos son la misma
+ * forma que tendrá el pedido en la base (`order_suppliers`), y por eso los
+ * mismos que enseña el panel y los que revalida el checkout.
+ *
+ * El orden es el de llegada —el grupo se abre donde entró su primera línea— y no
+ * alfabético: añadir algo no debe reordenar lo que el visitante ya tenía puesto
+ * delante de los ojos.
  */
-export function cartSupplier(
-  lines: CartLine[],
-): { slug: string; name: string } | null {
-  const first = lines[0];
-  return first ? { slug: first.supplierSlug, name: first.supplierName } : null;
+export function cartGroups(lines: CartLine[]): CartGroup[] {
+  const groups = new Map<string, CartGroup>();
+
+  for (const line of lines) {
+    const group = groups.get(line.supplierSlug);
+    if (group) {
+      group.lines.push(line);
+      continue;
+    }
+    groups.set(line.supplierSlug, {
+      supplierSlug: line.supplierSlug,
+      supplierName: line.supplierName,
+      lines: [line],
+      subtotalUsd: 0,
+    });
+  }
+
+  // El subtotal se cierra al final y sobre las líneas ya juntas: es la misma
+  // suma que el total del carrito, hecha por partes.
+  for (const group of groups.values()) {
+    group.subtotalUsd = cartSubtotalUsd(group.lines);
+  }
+
+  return [...groups.values()];
 }

@@ -511,9 +511,11 @@ export type CatalogInstallation = {
  * `kits` según `targetType`—, así que el join contra la tabla del item se escribe
  * a mano; drizzle no puede tejer una relación con dos destinos.
  *
- * El filtro por proveedor es un cinturón: una oferta mal cargada que apunte al
- * servicio de otro proveedor no se podría comprar (el carrito es de uno solo),
- * así que directamente no se ofrece.
+ * El filtro por proveedor sigue puesto porque hoy un servicio solo puede
+ * instalar lo que vende su propio proveedor. Deja de ser una regla del modelo en
+ * cuanto exista `services.equipmentScope` (ver PLAN.md §Paso 2): entonces un
+ * servicio abierto a equipo ajeno podrá ofrecerse aquí, y esta lista tendrá que
+ * decir de quién es cada instalación — hoy se da por hecho que es del vendedor.
  */
 async function getInstallationsFor(
   target: "PRODUCT" | "KIT",
@@ -743,10 +745,11 @@ export type CatalogRelated = {
 /**
  * Lo demás que vende el proveedor de la ficha abierta.
  *
- * Del **mismo** proveedor y no del catálogo entero, y no es una limitación: en
- * esta plataforma una orden la entrega uno solo, así que llevarse dos cosas de
- * proveedores distintos son dos pedidos. Sugerir lo de al lado es sugerir lo
- * que de verdad cabe en el mismo carrito.
+ * Del **mismo** proveedor y no del catálogo entero. Ya no es porque sea lo único
+ * que cabe en el carrito —un pedido admite varios proveedores—, sino porque es
+ * lo que de verdad viene a cuento: quien está mirando un panel de esta marca es
+ * mucho más probable que quiera su inversor y su batería, del mismo que ya se
+ * ganó su atención, que un producto suelto del otro extremo del catálogo.
  *
  * Sin filtro de zona a propósito: la cobertura es del proveedor, así que si el
  * visitante llegó hasta esta ficha, todo lo de esta tira le llega igual.

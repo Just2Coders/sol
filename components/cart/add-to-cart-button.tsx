@@ -11,16 +11,15 @@ import { useCartItemState, useCartStore } from "@/lib/cart/store";
  */
 export function AddToCartButton({ item }: { item: CartItem }) {
   const add = useCartStore((state) => state.add);
-  const clear = useCartStore((state) => state.clear);
   const setOpen = useCartStore((state) => state.setOpen);
-  const { inCart, conflict, soldOut, complete } = useCartItemState(item);
+  const { inCart, soldOut, complete } = useCartItemState(item);
 
   return (
     <div>
       <Button
         size="lg"
         className="w-full"
-        disabled={soldOut || complete || conflict !== null}
+        disabled={soldOut || complete}
         onClick={() => add(item)}
       >
         {soldOut
@@ -30,24 +29,9 @@ export function AddToCartButton({ item }: { item: CartItem }) {
             : "Añadir al carrito"}
       </Button>
 
-      {conflict && (
-        <p className="text-warning text-body-sm mt-3">
-          Tu carrito es de {conflict.name}. Cada pedido lo entrega un solo
-          proveedor, así que hay que{" "}
-          <button
-            type="button"
-            onClick={clear}
-            className="underline underline-offset-4"
-          >
-            vaciarlo
-          </button>{" "}
-          para pedir este.
-        </p>
-      )}
-
       {/* Ya en el carrito: el número es también la puerta al panel, que es
           donde se cambia la cantidad y se ve el subtotal. */}
-      {!conflict && inCart > 0 && (
+      {inCart > 0 && (
         <button
           type="button"
           onClick={() => setOpen(true)}

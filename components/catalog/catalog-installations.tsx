@@ -16,9 +16,14 @@ import { formatUsd } from "@/lib/utils";
  *
  * Fila propia del acordeón y no una casilla dentro del botón de compra:
  * contratar la mano de obra es una decisión aparte de comprar el equipo, y el
- * visitante puede llevarse solo una de las dos. Quien instala es siempre el
- * mismo proveedor que entrega —lo garantiza la consulta—, así que la orden sigue
- * siendo de uno solo.
+ * visitante puede llevarse solo una de las dos.
+ *
+ * Hoy quien instala es siempre el mismo proveedor que entrega —lo garantiza la
+ * consulta—, y por eso la línea del carrito se arma con el proveedor del equipo.
+ * En cuanto un servicio pueda trabajar sobre equipo ajeno (PLAN.md §Paso 2) eso
+ * deja de valer: la línea tendrá que llevar el proveedor **del servicio**, o
+ * caería en el grupo equivocado del pedido y se le liquidaría a quien no
+ * trabajó.
  *
  * Sin ofertas cargadas la fila no existe: no se enseña un pliegue vacío
  * prometiendo un servicio que este proveedor no da.

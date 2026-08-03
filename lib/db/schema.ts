@@ -10,6 +10,7 @@ import {
   primaryKey,
   text,
   timestamp,
+  unique,
   uuid,
   type AnyPgColumn,
 } from "drizzle-orm/pg-core";
@@ -43,6 +44,21 @@ export const paymentStatus = pgEnum("payment_status", [
 ]);
 
 export const orderItemType = pgEnum("order_item_type", ["PRODUCT", "KIT", "SERVICE"]);
+
+/**
+ * Cómo va la entrega de **la parte de un proveedor**, no la del pedido entero.
+ *
+ * El pago es global —se cobra o no se cobra el pedido completo, ver
+ * `orderStatus`— pero la entrega es de cada uno por su lado: uno puede haber
+ * llevado ya su batería mientras el otro todavía no monta los paneles. Y una
+ * parte se puede caer sola (`CANCELLED`: sin stock, el proveedor no puede) sin
+ * arrastrar al resto del pedido.
+ */
+export const fulfillmentStatus = pgEnum("fulfillment_status", [
+  "PENDING", // aún no entregado
+  "DELIVERED", // este proveedor ya entregó lo suyo
+  "CANCELLED", // esta parte se cayó; el resto del pedido sigue
+]);
 
 /**
  * Cómo se calcula el precio de un servicio.
@@ -278,8 +294,11 @@ export const installationOffers = pgTable(
 );
 
 // ─── Órdenes ─────────────────────────────────────────────────────────────────
-// Regla de negocio: una orden pertenece a UN solo proveedor (simplifica la
-// liquidación manual). El carrito no permite mezclar proveedores.
+// Un pedido puede llevar cosas de varios proveedores y se paga **una sola vez**
+// a la cuenta central: partir el Zelle sería peor para quien compra y peor para
+// conciliar. Lo que se parte es por dentro — `orders` es lo que el cliente
+// compró y pagó, y `order_suppliers` la parte que le toca a cada proveedor, con
+// su subtotal escrito y su propio estado de entrega.
 
 export const orders = pgTable("orders", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -288,9 +307,8 @@ export const orders = pgTable("orders", {
   userId: uuid("user_id")
     .notNull()
     .references(() => users.id),
-  supplierId: uuid("supplier_id")
-    .notNull()
-    .references(() => suppliers.id),
+  // Dónde se entrega. Es lo que se compara contra `supplier_zones` para saber si
+  // **todos** los proveedores del pedido llegan hasta ahí.
   zoneId: uuid("zone_id").references(() => zones.id),
   status: orderStatus("status").notNull().default("PENDING_PAYMENT"),
   subtotalUsd: numeric("subtotal_usd", { precision: 10, scale: 2, mode: "number" }).notNull(),
@@ -303,26 +321,73 @@ export const orders = pgTable("orders", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
-export const orderItems = pgTable("order_items", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  orderId: uuid("order_id")
-    .notNull()
-    .references(() => orders.id, { onDelete: "cascade" }),
-  itemType: orderItemType("item_type").notNull(),
-  // FK "blanda": apunta a products.id, kits.id o services.id según itemType.
-  itemId: uuid("item_id").notNull(),
-  // Snapshot al momento de la compra: cambios de precio/nombre posteriores
-  // no alteran órdenes existentes.
-  nameSnapshot: text("name_snapshot").notNull(),
-  priceSnapshotUsd: numeric("price_snapshot_usd", {
-    precision: 10,
-    scale: 2,
-    mode: "number",
-  }).notNull(),
-  // Unidades pedidas. En un servicio `PER_UNIT` son las unidades de obra
-  // (paneles a montar, metros de cable); en uno `FLAT`, siempre 1.
-  quantity: integer("quantity").notNull().default(1),
-});
+/**
+ * La parte del pedido que le toca a un proveedor.
+ *
+ * Es la fila que se liquida —su `subtotalUsd` es exactamente lo que hay que
+ * pagarle, escrito al comprar y no recalculado en cada lectura, igual que los
+ * snapshots de `order_items`— y la que puede cancelarse sola sin tocar el resto
+ * del pedido.
+ *
+ * Sin `onDelete` hacia `suppliers`: un proveedor con partes de pedido a su
+ * nombre no se borra, se desactiva (se perdería la trazabilidad de lo que se le
+ * liquidó). La guarda está en `app/actions/suppliers.ts`.
+ */
+export const orderSuppliers = pgTable(
+  "order_suppliers",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orderId: uuid("order_id")
+      .notNull()
+      .references(() => orders.id, { onDelete: "cascade" }),
+    supplierId: uuid("supplier_id")
+      .notNull()
+      .references(() => suppliers.id),
+    subtotalUsd: numeric("subtotal_usd", { precision: 10, scale: 2, mode: "number" }).notNull(),
+    status: fulfillmentStatus("status").notNull().default("PENDING"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    // Un proveedor no puede aparecer dos veces en el mismo pedido: sus líneas
+    // van todas a la misma parte, o el subtotal deja de significar nada. De
+    // paso, su columna izquierda resuelve "las partes de este pedido".
+    unique("order_suppliers_order_id_supplier_id_key").on(t.orderId, t.supplierId),
+    // El camino contrario —"qué le debo a este proveedor"—, que es por donde
+    // entran la liquidación y la guarda de borrado de proveedores.
+    index("order_suppliers_supplier_id_idx").on(t.supplierId),
+  ],
+);
+
+export const orderItems = pgTable(
+  "order_items",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    // La línea cuelga de la parte de su proveedor, no del pedido: así sabe quién
+    // la entrega sin repetir la columna, y el subtotal de la parte es la suma de
+    // sus líneas y de ninguna otra.
+    orderSupplierId: uuid("order_supplier_id")
+      .notNull()
+      .references(() => orderSuppliers.id, { onDelete: "cascade" }),
+    itemType: orderItemType("item_type").notNull(),
+    // FK "blanda": apunta a products.id, kits.id o services.id según itemType.
+    itemId: uuid("item_id").notNull(),
+    // Snapshot al momento de la compra: cambios de precio/nombre posteriores
+    // no alteran órdenes existentes.
+    nameSnapshot: text("name_snapshot").notNull(),
+    priceSnapshotUsd: numeric("price_snapshot_usd", {
+      precision: 10,
+      scale: 2,
+      mode: "number",
+    }).notNull(),
+    // Unidades pedidas. En un servicio `PER_UNIT` son las unidades de obra
+    // (paneles a montar, metros de cable); en uno `FLAT`, siempre 1.
+    quantity: integer("quantity").notNull().default(1),
+  },
+  // Las líneas se leen siempre por su parte, y el borrado en cascada de un
+  // pedido baja por aquí (Postgres no indexa una FK por serlo).
+  (t) => [index("order_items_order_supplier_id_idx").on(t.orderSupplierId)],
+);
 
 // ─── Pagos ───────────────────────────────────────────────────────────────────
 
@@ -360,7 +425,8 @@ export const suppliersRelations = relations(suppliers, ({ many }) => ({
   products: many(products),
   kits: many(kits),
   services: many(services),
-  orders: many(orders),
+  // No `orders`: un pedido ya no es de un proveedor. Lo suyo son las partes.
+  orderParts: many(orderSuppliers),
 }));
 
 export const supplierZonesRelations = relations(supplierZones, ({ one }) => ({
@@ -404,14 +470,26 @@ export const installationOffersRelations = relations(installationOffers, ({ one 
 
 export const ordersRelations = relations(orders, ({ one, many }) => ({
   user: one(users, { fields: [orders.userId], references: [users.id] }),
-  supplier: one(suppliers, { fields: [orders.supplierId], references: [suppliers.id] }),
   zone: one(zones, { fields: [orders.zoneId], references: [zones.id] }),
-  items: many(orderItems),
+  // Las líneas no cuelgan del pedido: se llega a ellas por su parte.
+  parts: many(orderSuppliers),
   payments: many(payments),
 }));
 
+export const orderSuppliersRelations = relations(orderSuppliers, ({ one, many }) => ({
+  order: one(orders, { fields: [orderSuppliers.orderId], references: [orders.id] }),
+  supplier: one(suppliers, {
+    fields: [orderSuppliers.supplierId],
+    references: [suppliers.id],
+  }),
+  items: many(orderItems),
+}));
+
 export const orderItemsRelations = relations(orderItems, ({ one }) => ({
-  order: one(orders, { fields: [orderItems.orderId], references: [orders.id] }),
+  part: one(orderSuppliers, {
+    fields: [orderItems.orderSupplierId],
+    references: [orderSuppliers.id],
+  }),
 }));
 
 export const paymentsRelations = relations(payments, ({ one }) => ({

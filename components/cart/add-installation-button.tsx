@@ -9,9 +9,6 @@ import { useCartItemState, useCartStore } from "@/lib/cart/store";
  *
  * Es el hermano pequeño de `AddToCartButton`: la misma lectura del carrito, en
  * secundario, porque la instalación acompaña a la compra y no compite con ella.
- * No repite el aviso de "tu carrito es de otro proveedor" —la instalación es del
- * mismo proveedor que el equipo, así que el botón de arriba ya lo ha explicado—;
- * aquí solo se desactiva.
  *
  * En un servicio por unidad de obra la cantidad son unidades, no piezas, así que
  * se cuenta con "×4" y no se intenta pluralizar la unidad.
@@ -19,16 +16,11 @@ import { useCartItemState, useCartStore } from "@/lib/cart/store";
 export function AddInstallationButton({ item }: { item: CartItem }) {
   const add = useCartStore((state) => state.add);
   const setOpen = useCartStore((state) => state.setOpen);
-  const { inCart, conflict } = useCartItemState(item);
+  const { inCart } = useCartItemState(item);
 
   return (
     <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-      <Button
-        variant="outline"
-        size="sm"
-        disabled={conflict !== null}
-        onClick={() => add(item)}
-      >
+      <Button variant="outline" size="sm" onClick={() => add(item)}>
         {inCart > 0 ? "Añadir otra" : "Añadir instalación"}
       </Button>
 

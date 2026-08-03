@@ -4,13 +4,7 @@ import { useSyncExternalStore } from "react";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 
-import {
-  cartLineKey,
-  cartSupplier,
-  clampQuantity,
-  type CartItem,
-  type CartLine,
-} from "./lines";
+import { cartLineKey, clampQuantity, type CartItem, type CartLine } from "./lines";
 
 /**
  * El carrito, en el cliente.
@@ -31,8 +25,6 @@ const STORAGE_KEY = "solaris.cart";
 /** Qué pasó al intentar añadir algo — lo traduce a un aviso quien llama. */
 export type AddToCartResult =
   | { ok: true; quantity: number }
-  /** El carrito ya es de otro proveedor: una orden = un proveedor. */
-  | { ok: false; reason: "other-supplier"; supplierName: string }
   /** Se quedó sin unidades entre que se pintó la ficha y se pulsó el botón. */
   | { ok: false; reason: "out-of-stock" };
 
@@ -60,15 +52,6 @@ export const useCartStore = create<CartState>()(
 
       add: (item, quantity = 1) => {
         const { lines } = get();
-
-        const supplier = cartSupplier(lines);
-        if (supplier && supplier.slug !== item.supplierSlug) {
-          return {
-            ok: false,
-            reason: "other-supplier",
-            supplierName: supplier.name,
-          };
-        }
 
         const key = cartLineKey(item);
         const existing = lines.find((line) => cartLineKey(line) === key);
@@ -156,8 +139,6 @@ export function useCartLines(): CartLine[] {
 export type CartItemState = {
   /** Unidades ya elegidas de este item. */
   inCart: number;
-  /** El carrito ya es de otro proveedor: no cabe nada de este. */
-  conflict: { slug: string; name: string } | null;
   /** Producto sin unidades; nunca un kit ni un servicio. */
   soldOut: boolean;
   /** Ya está en el carrito todo el stock que había. */
@@ -179,13 +160,8 @@ export function useCartItemState(item: CartItem): CartItemState {
   const key = cartLineKey(item);
   const inCart = lines.find((line) => cartLineKey(line) === key)?.quantity ?? 0;
 
-  // Una orden se entrega por un solo proveedor (ver PLAN.md), así que un
-  // carrito ya empezado con otro cierra la puerta hasta que se vacíe.
-  const supplier = cartSupplier(lines);
-
   return {
     inCart,
-    conflict: supplier && supplier.slug !== item.supplierSlug ? supplier : null,
     soldOut: item.stock === 0,
     complete: item.stock !== null && inCart >= item.stock,
   };

@@ -35,9 +35,8 @@ export function CatalogPurchaseBlock({
   note?: React.ReactNode;
 }) {
   const add = useCartStore((state) => state.add);
-  const clear = useCartStore((state) => state.clear);
   const setOpen = useCartStore((state) => state.setOpen);
-  const { inCart, conflict, soldOut, complete } = useCartItemState(item);
+  const { inCart, soldOut, complete } = useCartItemState(item);
 
   const [quantity, setQuantity] = useState(1);
 
@@ -48,10 +47,9 @@ export function CatalogPurchaseBlock({
       ? MAX_LINE_QUANTITY
       : Math.min(Math.max(item.stock - inCart, 0), MAX_LINE_QUANTITY);
   const chosen = Math.min(quantity, Math.max(ceiling, 1));
-  const blocked = soldOut || complete || conflict !== null;
+  const blocked = soldOut || complete;
   // ¿Tiene algo que decir la tira de marginalia de debajo del botón?
-  const hasState =
-    item.stock !== null || note != null || (!conflict && inCart > 0);
+  const hasState = item.stock !== null || note != null || inCart > 0;
 
   function handleAdd() {
     const result = add(item, chosen);
@@ -121,7 +119,7 @@ export function CatalogPurchaseBlock({
 
           {/* Ya en el carrito: el número es también la puerta al panel, que es
               donde se cambia la cantidad y se ve el subtotal. */}
-          {!conflict && inCart > 0 && (
+          {inCart > 0 && (
             <button
               type="button"
               onClick={() => setOpen(true)}
@@ -131,21 +129,6 @@ export function CatalogPurchaseBlock({
             </button>
           )}
         </div>
-      )}
-
-      {conflict && (
-        <p className="text-warning text-body-sm mt-2">
-          Tu carrito es de {conflict.name}. Cada pedido lo entrega un solo
-          proveedor, así que hay que{" "}
-          <button
-            type="button"
-            onClick={clear}
-            className="underline underline-offset-4"
-          >
-            vaciarlo
-          </button>{" "}
-          para pedir este.
-        </p>
       )}
     </div>
   );
