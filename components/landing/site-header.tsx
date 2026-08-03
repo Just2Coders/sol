@@ -32,7 +32,7 @@ export function SiteHeader({ session }: { session: SessionPayload | null }) {
     "text-label tracking-mono-md text-foreground ease-standard hidden font-mono uppercase transition-colors duration-base hover:text-primary-loud sm:block";
 
   return (
-    <header className="px-gutter border-foreground bg-background sticky top-0 z-40 flex h-19 shrink-0 items-center justify-between border-b">
+    <header className="px-gutter border-foreground bg-background sticky top-0 z-40 flex h-header-bar shrink-0 items-center justify-between border-b">
       {/* Izquierda — la marca. El descriptor va a su lado y no debajo: en una
           barra de 76 px apilarlos la parte en dos pisos y el filete deja de
           leerse como el suelo de la marca. */}
@@ -72,7 +72,7 @@ export function SiteHeader({ session }: { session: SessionPayload | null }) {
 
       <div className="flex shrink-0 items-center gap-6">
         <CartPanel className="text-foreground hover:text-primary-loud" />
-        <FlatCta href="/#supplier" tone="loud" size="md" className="gap-2">
+        <FlatCta href="/sell" tone="loud" size="md" className="gap-2">
           Vender en Solaris
           <ArrowRight aria-hidden className="size-4" />
         </FlatCta>

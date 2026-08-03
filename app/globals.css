@@ -249,6 +249,13 @@
   --text-display-4--line-height: 1.1;
   --text-display-4--letter-spacing: -0.02em;
   --text-display-4--font-weight: 700;
+  /* La cifra suelta: un solo número o dato, más grande que cualquier titular
+     porque no compite con texto alrededor — es la banda de proveedores hoy,
+     no un peldaño más de la escala de encabezados. */
+  --text-stat: clamp(64px, 8.33vw, 120px);
+  --text-stat--line-height: 0.95;
+  --text-stat--letter-spacing: -0.03em;
+  --text-stat--font-weight: 800;
   /* La marca dibujada a sangre, recortada por los dos bordes del viewport: no
      es un titular, es grafismo, y por eso mide en vw y no en px. */
   --text-wordmark: 26.4vw;
@@ -337,6 +344,14 @@
   --spacing-cta-bot: 120px;
   --spacing-header: 16px;
   --spacing-grid: 48px;
+  /* La altura real de la barra del sitio (`h-header-bar` en site-header.tsx),
+     no el `--spacing-header` de arriba —ese es el padding de las cabeceras de
+     /design, una barra distinta. Como la barra vive `sticky top-0` y sigue
+     reservando su hueco en el flujo, el hero de debajo tiene que restarlo
+     para que barra + hero sumen exactamente una pantalla; si alguna vez
+     cambia el alto de la barra, este valor es el único que hay que tocar. */
+  --spacing-header-bar: 76px;
+  --spacing-hero: calc(100vh - var(--spacing-header-bar));
 
   /* Motion: transiciones calmadas, nunca springs ni bounces. La curva arranca
      rápido y frena largo —toda la duración se va en el final del recorrido—,
@@ -348,6 +363,33 @@
   --transition-duration-slow: 400ms;
   --default-transition-duration: 220ms;
   --default-transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+
+  /* El cabeceo de la pestaña del buscador: el galón asoma por encima del
+     pliegue y cae un par de píxeles, en bucle. Es el único movimiento que se
+     repite solo en toda la home, y está para decir "esto sigue por debajo" —
+     no para decorar. La curva es la misma del sistema, escrita literal como el
+     resto de este bloque. La pausa larga entre cabeceos es deliberada: un
+     bucle sin reposo se convierte en ruido a los diez segundos. */
+  --animate-nudge: nudge 2.6s cubic-bezier(0.22, 1, 0.36, 1) infinite;
+}
+
+@keyframes nudge {
+  0%,
+  55%,
+  100% {
+    transform: translateY(0);
+  }
+  27% {
+    transform: translateY(3px);
+  }
+}
+
+/* Quien pide menos movimiento se queda con el galón quieto: la pista sigue
+   ahí, deja de repetirse. */
+@media (prefers-reduced-motion: reduce) {
+  .animate-nudge {
+    animation: none;
+  }
 }
 
 @layer base {

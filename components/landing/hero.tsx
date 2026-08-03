@@ -18,12 +18,18 @@ import { KitFinder } from "./kit-finder";
  * La sección no recorta lo que le sobresale: el buscador de kits nace dentro y
  * cuelga por debajo del borde de la foto, y es la sección siguiente la que
  * reserva el aire para recibirlo (`pt-section-lg`).
+ *
+ * La altura es `h-hero` (100vh menos la barra del sitio) y no un píxel fijo:
+ * la barra quedó `sticky top-0` y sigue reservando su hueco en el flujo, así
+ * que si el hero no descuenta ese alto sobra ese hueco al final del scroll de
+ * una pantalla. Con la resta, barra + hero llenan exactamente una pantalla en
+ * cualquier viewport.
  */
 export function Hero() {
   // El buscador lee el kit elegido del contexto, así que esta sección no tiene
   // que saber nada de kits para colocarlo.
   return (
-    <section className="relative flex h-205 flex-col justify-end">
+    <section className="relative flex h-hero flex-col justify-end">
       <Image
         src="/images/hero-home.jpg"
         alt="Casa cubana al atardecer con paneles solares en el techo y un kit de energía instalado en la pared"
