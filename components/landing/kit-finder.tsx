@@ -22,7 +22,9 @@ import { useKitSelection } from "./kit-selection";
  * despacio hacia abajo. Va separado y no cosido al borde: pegado se leía como
  * una pestaña del propio cajón, y suelto se lee como lo que es, una señal que
  * apunta a lo que hay debajo. Es lo único que se ve de la sección desde
- * arriba, y su trabajo es decir que la barra no está cortada, sino que sigue.
+ * arriba, y su trabajo es decir que la barra no está cortada, sino que sigue
+ * — por eso es un botón, no solo un adorno: al pulsarlo baja directo al panel
+ * de proveedores (`scroll-mt-8` en esa sección deja sitio para la barra fija).
  *
  * Los tres kits son un grupo de botones de estado, no enlaces: al pulsar no se
  * navega a ningún sitio, cambia el contenido de "Elige quién te lo instala" un
@@ -31,8 +33,9 @@ import { useKitSelection } from "./kit-selection";
  * también lo lleva el activo, para que al cambiar de pestaña ninguna caja se
  * mueva un píxel.
  *
- * La lupa sí es un enlace: es la salida al catálogo completo, la única acción
- * de la barra que se lleva al visitante a otra página.
+ * La lupa es un enlace —la salida al catálogo completo— y el galón hace scroll
+ * dentro de la misma página: las dos acciones que llevan a otro sitio de la
+ * barra, ninguna decorativa.
  */
 export function KitFinder({ className }: { className?: string }) {
   const { kits, kit: current, select, panelId } = useKitSelection();
@@ -46,15 +49,22 @@ export function KitFinder({ className }: { className?: string }) {
             va centrado porque la animación escribe `transform`, y un
             `-translate-x-1/2` en el mismo elemento se lo comería. */}
         <div className="absolute inset-x-0 -top-11 flex justify-center">
-          <div className="bg-card border-foreground flex h-7 items-center border px-3">
+          <button
+            type="button"
+            onClick={() => {
+              document
+                .getElementById(panelId)
+                ?.scrollIntoView({ behavior: "smooth", block: "start" });
+            }}
+            aria-label="Ir a la sección de proveedores"
+            className="bg-card border-foreground ease-standard hover:bg-muted flex h-7 items-center border px-3 transition-colors duration-base focus-visible:ring-ring focus-visible:outline-none focus-visible:ring-2"
+          >
             <ChevronDown
               aria-hidden
               className="text-foreground animate-nudge size-4"
             />
-          </div>
+          </button>
         </div>
-
-        <p className="text-caption text-foreground font-bold">Elige tu kit</p>
 
         <div
           role="group"

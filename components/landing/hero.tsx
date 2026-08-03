@@ -50,15 +50,18 @@ export function Hero() {
           Te los monta un proveedor de tu provincia y el pago va por Solaris,
           con factura.
         </p>
-        <FlatCta href="/catalog?type=kit" className="mt-8">
-          Ver kits con instalación
+        <FlatCta href="/catalog" className="mt-8">
+          Ver catálogo
         </FlatCta>
       </div>
 
-      {/* A caballo del borde: media pieza sobre la foto, media sobre el fondo
-          de página. El z-20 lo pone por encima del scrim y de la sección que
-          viene detrás. */}
-      <KitFinder className="absolute inset-x-0 -bottom-11 z-20" />
+      {/* Colgado por debajo del borde de la foto y no a caballo: con el hero a
+          `100vh` exacto, la mitad que antes quedaba sobre la foto asomaba
+          cortada a mitad de botón en la primera pantalla. El desplazamiento
+          alcanza para que toda la barra caiga fuera del pliegue — solo el
+          galón queda a la vista como pista de scroll — y la sección de abajo
+          (`pt-section-lg`) sigue teniendo de sobra para absorberla. */}
+      <KitFinder className="absolute inset-x-0 -bottom-24 z-20" />
     </section>
   );
 }
