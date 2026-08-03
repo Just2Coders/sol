@@ -56,64 +56,71 @@ export function SheetFilters({
   const visible = filters.type ? counts[filters.type] : counts.all;
 
   return (
+    // El fondo y el blur van en esta capa, a sangre: es la que queda fija
+    // (`sticky top-0`) y la que tiene que tapar la grilla que pasa por debajo.
+    // La caja con filete vive dentro, respetando el gutter — así se pega al
+    // header sin saltos, pero se ve como un panel suelto, no como una barra.
     <div
       aria-busy={pending}
-      className="border-border bg-background/95 px-gutter sticky top-0 z-40 flex flex-wrap items-center gap-x-4 gap-y-3 border-y py-3 backdrop-blur-sm"
+      className="bg-background/95 px-gutter sticky top-0 z-40 pt-6 pb-10 backdrop-blur-sm"
     >
-      <TypeSwitch
-        value={filters.type}
-        counts={counts}
-        onChange={(type) => apply({ type })}
-      />
-
-      <ActiveFilterChips
-        filters={filters}
-        zones={zones}
-        suppliers={suppliers}
-        apply={apply}
-      />
-
-      <div className="ml-auto flex items-center gap-2">
-        <SortSelect
-          inline
-          value={filters.sort}
-          onChange={(sort) => apply({ sort })}
-          className="w-56"
+      <div className="border-foreground bg-card flex w-full flex-wrap items-center gap-x-7 gap-y-4 border px-7 py-5">
+        <TypeSwitch
+          value={filters.type}
+          counts={counts}
+          onChange={(type) => apply({ type })}
         />
 
-        <Button
-          variant="outline"
-          aria-expanded={open}
-          aria-haspopup="dialog"
-          onPointerEnter={preload}
-          onPointerDown={preload}
-          onFocus={preload}
-          onClick={() => {
-            setMounted(true);
-            setOpen(true);
-          }}
-        >
-          <Filter aria-hidden />
-          Filtros
-          {active > 0 && (
-            <span className="bg-primary text-primary-foreground text-marginalia ml-1 rounded-md px-1.5 font-mono">
-              {active}
-            </span>
-          )}
-        </Button>
+        <ActiveFilterChips
+          filters={filters}
+          zones={zones}
+          suppliers={suppliers}
+          apply={apply}
+        />
 
-        {mounted && (
-          <FilterSheet
-            open={open}
-            onOpenChange={setOpen}
-            filters={filters}
-            zones={zones}
-            suppliers={suppliers}
-            apply={apply}
-            clear={clear}
-            visible={visible}
+        <div className="ml-auto flex items-center gap-6">
+          <SortSelect
+            inline
+            value={filters.sort}
+            onChange={(sort) => apply({ sort })}
+            className="rounded-none border-transparent bg-transparent px-1 hover:bg-transparent"
           />
-        )}
+
+          <Button
+            variant="outline"
+            aria-expanded={open}
+            aria-haspopup="dialog"
+            onPointerEnter={preload}
+            onPointerDown={preload}
+            onFocus={preload}
+            onClick={() => {
+              setMounted(true);
+              setOpen(true);
+            }}
+            className="border-foreground rounded-none"
+          >
+            <Filter aria-hidden />
+            Filtros
+            {active > 0 && (
+              <span className="bg-primary-loud text-primary-loud-foreground text-marginalia ml-1 px-1.5 font-mono">
+                {active}
+              </span>
+            )}
+          </Button>
+
+          {mounted && (
+            <FilterSheet
+              open={open}
+              onOpenChange={setOpen}
+              filters={filters}
+              zones={zones}
+              suppliers={suppliers}
+              apply={apply}
+              clear={clear}
+              visible={visible}
+            />
+          )}
+        </div>
       </div>
     </div>
   );
