@@ -242,6 +242,9 @@ async function main() {
           "Montaje, conexión y puesta en marcha del sistema completo. Incluye materiales de fijación y una revisión a los 30 días.",
         pricing: "FLAT",
         priceUsd: 350,
+        // Solo sobre kits propios: la revisión a los 30 días es responder por el
+        // conjunto, y eso no se hace sobre equipo que no vendiste.
+        equipmentScope: "OWN",
       })
       .returning();
 
@@ -257,6 +260,9 @@ async function main() {
         pricing: "PER_UNIT",
         priceUsd: 25,
         unitLabel: "panel",
+        // "Ya comprados" es literal: este trabajo no pregunta de dónde salió el
+        // panel, así que es el ejemplo del extremo abierto.
+        equipmentScope: "ANY",
       })
       .returning();
 

@@ -17,9 +17,10 @@ const RELATED_SIZES = "(min-width: 1024px) 22vw, 45vw";
  * que llene algo no llena nada. Que sean fotos y no renglones de texto es lo que
  * la distingue de un vistazo de las filas de arriba.
  *
- * Del mismo proveedor y no del catálogo entero por una regla de negocio, no por
- * pereza: una orden la entrega uno solo, así que esto es lo único que de verdad
- * cabe en el mismo carrito que lo que se está mirando (ver `getSupplierRelated`).
+ * Del mismo proveedor y no del catálogo entero por relevancia: quien mira este
+ * panel querrá antes el inversor del mismo vendedor que un producto suelto del
+ * otro extremo del catálogo (ver `getSupplierRelated`). Ya no es porque sea lo
+ * único que cabe en el carrito — un pedido admite varios proveedores.
  *
  * Sin nada que sugerir no hay bloque: un "más de este proveedor" vacío dice que
  * el proveedor no tiene nada más, que es justo lo que no conviene anunciar.

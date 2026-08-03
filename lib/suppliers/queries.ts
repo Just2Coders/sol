@@ -24,12 +24,24 @@ export async function getSuppliersWithZones(): Promise<SupplierWithZones[]> {
   }));
 }
 
-export type SupplierOption = { id: string; name: string; active: boolean };
+export type SupplierOption = {
+  id: string;
+  name: string;
+  active: boolean;
+  /**
+   * Con qué alcance nacen sus servicios. Viaja aquí porque el formulario de
+   * servicios lo usa para **prefijar** el select al elegir proveedor; ninguna
+   * consulta lo lee para resolver qué se ofrece (eso sale siempre de la fila del
+   * servicio). Ver ARCHITECTURE §4.
+   */
+  defaultEquipmentScope: "OWN" | "PLATFORM" | "ANY";
+};
 
-// Proveedores reducidos a {id, name} para los selects de productos y kits.
+// Proveedores reducidos a lo que necesitan los selects de productos, kits y
+// servicios.
 export async function getSupplierOptions(): Promise<SupplierOption[]> {
   return db.query.suppliers.findMany({
-    columns: { id: true, name: true, active: true },
+    columns: { id: true, name: true, active: true, defaultEquipmentScope: true },
     orderBy: (s, { asc }) => [asc(s.name)],
   });
 }

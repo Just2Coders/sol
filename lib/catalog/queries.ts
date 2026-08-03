@@ -9,6 +9,7 @@ import {
   inArray,
   lte,
   ne,
+  or,
   sql,
   type SQL,
 } from "drizzle-orm";
@@ -498,6 +499,14 @@ export type CatalogInstallation = {
   /** Primera foto, para la línea del carrito; `null` si no hay ninguna. */
   image: string | null;
   categoryName: string;
+  /**
+   * Quién hace el trabajo, que **no siempre es quien vende el equipo**: un
+   * servicio abierto a equipo ajeno puede ofrecerse aquí siendo de otro. Es el
+   * proveedor que tiene que llevar la línea del carrito —de él cuelga la parte
+   * del pedido y a él se le liquida—, así que viaja con la instalación y no se
+   * deduce del item.
+   */
+  supplier: CatalogSupplier;
 };
 
 /**
@@ -511,9 +520,17 @@ export type CatalogInstallation = {
  * `kits` según `targetType`—, así que el join contra la tabla del item se escribe
  * a mano; drizzle no puede tejer una relación con dos destinos.
  *
- * El filtro por proveedor es un cinturón: una oferta mal cargada que apunte al
- * servicio de otro proveedor no se podría comprar (el carrito es de uno solo),
- * así que directamente no se ofrece.
+ * Quién puede aparecer aquí lo decide el **alcance** del servicio: el del propio
+ * vendedor siempre, y el de otro proveedor solo si acepta equipo ajeno
+ * (`equipmentScope !== "OWN"`). Es el mismo cinturón de antes, pero ahora
+ * pregunta por una regla del modelo en vez de dar por hecho que instala quien
+ * vende: una oferta cargada contra un servicio `OWN` de otro no se podría
+ * cumplir, así que directamente no se ofrece.
+ *
+ * Por eso hace falta el join contra el proveedor **del servicio**: hay que
+ * saber si sigue activo (antes se daba por bueno, porque era el mismo que ya
+ * había cargado la ficha) y hay que devolverlo, porque es el que tiene que
+ * llevar la línea del carrito.
  */
 async function getInstallationsFor(
   target: "PRODUCT" | "KIT",
@@ -521,7 +538,7 @@ async function getInstallationsFor(
 ): Promise<CatalogInstallation[]> {
   const owner = target === "PRODUCT" ? products : kits;
 
-  return db
+  const rows = await db
     .select({
       id: services.id,
       slug: services.slug,
@@ -534,10 +551,15 @@ async function getInstallationsFor(
       // "todavía sin foto" que espera la línea del carrito.
       image: sql<string | null>`${services.images}[1]`.as("image"),
       categoryName: serviceCategories.name,
+      supplierId: suppliers.id,
+      // `name` y `slug` ya los ocupa el servicio: sin alias las columnas chocan.
+      supplierName: sql<string>`${suppliers.name}`.as("supplier_name"),
+      supplierSlug: sql<string>`${suppliers.slug}`.as("supplier_slug"),
     })
     .from(installationOffers)
     .innerJoin(services, eq(services.id, installationOffers.serviceId))
     .innerJoin(serviceCategories, eq(serviceCategories.id, services.categoryId))
+    .innerJoin(suppliers, eq(suppliers.id, services.supplierId))
     .innerJoin(owner, eq(owner.id, installationOffers.targetId))
     .where(
       and(
@@ -545,11 +567,20 @@ async function getInstallationsFor(
         eq(owner.slug, slug),
         eq(owner.active, true),
         eq(services.active, true),
-        eq(services.supplierId, owner.supplierId),
+        eq(suppliers.active, true),
+        or(
+          eq(services.supplierId, owner.supplierId),
+          ne(services.equipmentScope, "OWN"),
+        ),
       ),
     )
     // El orden lo pone el admin en la categoría; el desempate, el nombre.
     .orderBy(serviceCategories.position, services.name);
+
+  return rows.map(({ supplierId, supplierName, supplierSlug, ...service }) => ({
+    ...service,
+    supplier: { id: supplierId, name: supplierName, slug: supplierSlug },
+  }));
 }
 
 export type CatalogProduct = {
@@ -743,10 +774,11 @@ export type CatalogRelated = {
 /**
  * Lo demás que vende el proveedor de la ficha abierta.
  *
- * Del **mismo** proveedor y no del catálogo entero, y no es una limitación: en
- * esta plataforma una orden la entrega uno solo, así que llevarse dos cosas de
- * proveedores distintos son dos pedidos. Sugerir lo de al lado es sugerir lo
- * que de verdad cabe en el mismo carrito.
+ * Del **mismo** proveedor y no del catálogo entero. Ya no es porque sea lo único
+ * que cabe en el carrito —un pedido admite varios proveedores—, sino porque es
+ * lo que de verdad viene a cuento: quien está mirando un panel de esta marca es
+ * mucho más probable que quiera su inversor y su batería, del mismo que ya se
+ * ganó su atención, que un producto suelto del otro extremo del catálogo.
  *
  * Sin filtro de zona a propósito: la cobertura es del proveedor, así que si el
  * visitante llegó hasta esta ficha, todo lo de esta tira le llega igual.

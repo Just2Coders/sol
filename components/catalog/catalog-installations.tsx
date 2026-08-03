@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowUpRight, CalendarDate, Home } from "reicon-react";
+import { ArrowUpRight, CalendarDate, Home, Shop } from "reicon-react";
 
 import { AddInstallationButton } from "@/components/cart/add-installation-button";
 import { CatalogDetailAccordionRow } from "@/components/catalog/detail/detail-accordion";
@@ -16,9 +16,14 @@ import { formatUsd } from "@/lib/utils";
  *
  * Fila propia del acordeón y no una casilla dentro del botón de compra:
  * contratar la mano de obra es una decisión aparte de comprar el equipo, y el
- * visitante puede llevarse solo una de las dos. Quien instala es siempre el
- * mismo proveedor que entrega —lo garantiza la consulta—, así que la orden sigue
- * siendo de uno solo.
+ * visitante puede llevarse solo una de las dos.
+ *
+ * Quien instala **no siempre es quien vende**: un servicio abierto a equipo
+ * ajeno puede ofrecerse aquí siendo de otro proveedor. Por eso la línea del
+ * carrito se arma con el proveedor de la instalación y no con el del equipo —si
+ * no, caería en el grupo equivocado del pedido y se le liquidaría a quien no
+ * trabajó— y por eso la fila lo dice cuando no coinciden: contratar a un tercero
+ * no puede ser un detalle que se descubra al recibir el pedido.
  *
  * Sin ofertas cargadas la fila no existe: no se enseña un pliegue vacío
  * prometiendo un servicio que este proveedor no da.
@@ -41,14 +46,17 @@ export function CatalogInstallations({
       icon={Home}
     >
       <p className="text-muted-foreground text-body-sm max-w-[60ch]">
-        La instala {supplier.name}, el mismo que entrega el equipo.
+        {installations.every((i) => i.supplier.slug === supplier.slug)
+          ? `La instala ${supplier.name}, el mismo que entrega el equipo.`
+          : "No todas las hace quien entrega el equipo: cada una dice de quién es."}
       </p>
 
       <ul className="border-border mt-4 border-t">
         {installations.map((installation) => {
           // La foto de la ficha del servicio que se guarda en el carrito: el
           // mismo trato que un producto o un kit, con `stock: null` porque la
-          // mano de obra no tiene existencias.
+          // mano de obra no tiene existencias. El proveedor es el **suyo**, no
+          // el del equipo: es lo que decide en qué parte del pedido cae.
           const item: CartItem = {
             type: "SERVICE",
             id: installation.id,
@@ -57,10 +65,11 @@ export function CatalogInstallations({
             priceUsd: installation.priceUsd,
             unitLabel: installation.unitLabel,
             image: installation.image,
-            supplierSlug: supplier.slug,
-            supplierName: supplier.name,
+            supplierSlug: installation.supplier.slug,
+            supplierName: installation.supplier.name,
             stock: null,
           };
+          const external = installation.supplier.slug !== supplier.slug;
 
           return (
             <li key={installation.id} className="border-border border-b py-4">
@@ -93,6 +102,16 @@ export function CatalogInstallations({
                   )}
                 </span>
               </div>
+
+              {/* Quién la hace, solo cuando no es quien vende: repetir el
+                  nombre del vendedor en cada fila sería ruido, pero callar el
+                  de un tercero sería esconder con quién se está contratando. */}
+              {external && (
+                <p className="text-muted-foreground text-marginalia mt-2 flex items-center gap-2 font-mono">
+                  <Shop aria-hidden className="size-3.5 shrink-0" />
+                  la hace {installation.supplier.name}
+                </p>
+              )}
 
               {installation.description && (
                 <p className="text-muted-foreground text-body-sm mt-2 max-w-[60ch]">

@@ -28,7 +28,8 @@
 app/                    Presentación: rutas, páginas (RSC) y Server Actions
   (auth)/               Grupo de rutas de autenticación (login, signup)
   actions/              Server Actions ("use server") — punto de entrada de mutaciones
-  admin/                Panel de administración (rol ADMIN): zones, suppliers, products, kits
+  admin/                Panel de administración (rol ADMIN): zones, suppliers,
+                        products, kits, services, service-categories
   account/              Área del cliente autenticado
   catalog/              Catálogo público: listado y fichas de /products/[slug],
                         /kits/[slug] y /services/[slug]
@@ -46,7 +47,8 @@ components/
   cart/                 Carrito: botón de la ficha y panel lateral del header
 lib/                    Lógica de servidor reutilizable (NO específica de una ruta)
   cart/
-    lines.ts            El carrito como dato puro: la línea y sus sumas
+    lines.ts            El carrito como dato puro: la línea, sus sumas y su
+                        reparto por proveedor
     store.ts            El store de zustand, persistido en localStorage
   db/
     schema.ts           Definición de tablas y relaciones Drizzle (fuente del modelo)
@@ -59,6 +61,13 @@ lib/                    Lógica de servidor reutilizable (NO específica de una 
     queries.ts          Lecturas del catálogo público (solo activo, por zona)
   products/queries.ts   Lecturas de productos (panel admin)
   kits/queries.ts       Lecturas de kits con sus componentes (panel admin)
+  services/
+    enums.ts            Los valores de `service_pricing` y `equipment_scope`
+                        (puro: lo importan la Action y el formulario)
+    queries.ts          Lecturas de servicios (panel admin) y la guarda de
+                        ofertas sobre equipo ajeno
+  service-categories/queries.ts
+                        Lecturas de categorías, con cuántos servicios las usan
   zones/queries.ts      Lecturas de zonas (jerarquía estado → ciudad)
   zones/preference.ts   Cookie con la zona que eligió el visitante
   suppliers/queries.ts  Lecturas de proveedores (con zonas de cobertura)
@@ -148,10 +157,22 @@ producto. El duotono completo solo se monta donde hay cursor para deshacerlo
 Una ficha lee dos cosas —el item y las instalaciones que ofrece— y las pide **en
 paralelo**: `getInstallationsFor` entra por el slug del item y no por su id
 justamente para no depender de la otra consulta, porque con Neon por HTTP dos
-saltos en serie son dos latencias. Ojo con `extras` de la query relacional de
-drizzle: reescribe las referencias de columna apuntándolas a la tabla exterior,
-así que una subconsulta correlacionada contra otras tablas **no** se puede
-escribir ahí.
+saltos en serie son dos latencias.
+
+Quien instala no es siempre quien vende: un servicio que no sea `OWN` puede
+ofrecerse junto al equipo de otro proveedor. Por eso la fila dice de quién es
+cuando no coincide con el vendedor, y la línea de carrito que arma guarda **el
+proveedor del servicio** y no el del equipo — es lo que decide en qué parte del
+pedido cae y a quién se le liquida.
+
+> **Pendiente.** Esa lista todavía no filtra por zona, y con un instalador ajeno
+> hace falta: que el visitante llegara a la ficha solo prueba que el **vendedor**
+> cubre su zona. Es el paso 3 de [`PLAN.md`](../PLAN.md), y necesita que la zona
+> del visitante baje hasta la consulta.
+
+Ojo con `extras` de la query relacional de drizzle: reescribe las referencias de
+columna apuntándolas a la tabla exterior, así que una subconsulta correlacionada
+contra otras tablas **no** se puede escribir ahí.
 
 Los filtros del catálogo viven en la **URL**, no en estado de cliente
 (`lib/catalog/filters.ts` los traduce en ambos sentidos): así una búsqueda se
@@ -173,8 +194,16 @@ elegido.
   depende de zustand ni del navegador, así que lo importan los dos lados (igual
   que `lib/catalog/filters.ts`).
 - `lib/cart/store.ts` — el store (`"use client"`) con el middleware `persist`.
-  Impone la regla de **un solo proveedor por carrito**: `add` rechaza un item
-  de otro y devuelve el motivo para que la ficha lo explique.
+
+El carrito **admite varios proveedores** y no ordena por ellos: las líneas se
+guardan en el orden en que se eligieron, y agrupar por quién entrega es cosa de
+quien pinta (`cartGroups` en `lines.ts`), no del almacenamiento. Así el panel
+puede enseñar el reparto —un encabezado y un subtotal por proveedor— sin que
+añadir un panel reordene lo que ya estaba puesto delante de los ojos.
+
+`cartGroups()` es quien hace el reparto, y el panel solo lo **dibuja** cuando hay
+más de un proveedor: con uno solo, un encabezado y un subtotal por grupo
+repetirían lo que ya dicen la cabecera y el pie.
 
 Lo que se guarda es una **foto** de la ficha (nombre, precio, stock del
 momento) para poder pintar el panel sin volver al servidor. Nunca se cobra
@@ -195,20 +224,48 @@ Definido en [`lib/db/schema.ts`](../lib/db/schema.ts). Entidades principales:
   Cobertura por zona vía `supplier_zones`. `payoutInfo` = cómo se le liquida.
 - **products** / **kits** — catálogo de cada proveedor. Un kit agrupa productos
   (`kit_items`) y tiene su propio precio.
-- **services** — mano de obra (instalación) del mismo proveedor, clasificada por
+- **services** — mano de obra (instalación), clasificada por
   **service_categories** (tabla, no enum: el admin añade categorías sin deploy).
   Tabla aparte de `products` porque un servicio no tiene existencias ni entrega y
   su precio puede ser cerrado (`FLAT`) o por unidad de obra (`PER_UNIT` +
-  `unitLabel`). **installation_offers** dice qué servicio se ofrece junto a qué
-  producto o kit — sin filas ahí, el servicio se sigue vendiendo solo.
-- **orders** — una orden pertenece a **un solo proveedor** (simplifica la
-  liquidación). No se mezclan proveedores en un mismo pedido. Que el instalador
-  sea el proveedor es lo que deja esta regla intacta al vender instalación.
+  `unitLabel`). `equipmentScope` dice sobre qué equipo trabaja, de más estrecho a
+  más ancho: `OWN` solo sobre lo que vendió su propio proveedor, `PLATFORM`
+  también sobre lo que vendió otro proveedor de Solaris, `ANY` también sobre lo
+  que el comprador consiguió fuera. Los dos últimos son "acepto equipo ajeno" y
+  la pregunta operativa suele ser `scope !== "OWN"`; se separan en una sola cosa
+  —de quién es el equipo es un **dato** mientras lo vendiera Solaris (está en
+  `order_items` de un pedido pagado) y una promesa del cliente cuando no—, y por
+  eso solo `ANY` se puede vender a ciegas. Es del servicio, no del proveedor
+  —la misma empresa quiere las dos cosas a la vez—;
+  `suppliers.defaultEquipmentScope` solo prefija el formulario y **no se lee en
+  ninguna consulta**.
+  **installation_offers** dice qué servicio se ofrece junto a qué producto o kit,
+  y cruza de proveedor cuando el servicio no es `OWN`. Sin filas ahí, un servicio
+  `ANY` se sigue vendiendo solo; los otros dos solo existen pegados a su equipo.
+- **orders** — lo que el cliente compró y pagó: un número, un total y **un solo
+  pago**, aunque lleve cosas de varios proveedores. No tiene `supplierId`.
+- **order_suppliers** — la parte del pedido que le toca a cada proveedor, con su
+  `subtotalUsd` guardado y su propio `status` de entrega
+  (`PENDING | DELIVERED | CANCELLED`). Es la fila que se liquida y la que puede
+  caerse sola sin arrastrar al pedido. `unique(orderId, supplierId)`: un
+  proveedor no aparece dos veces en el mismo pedido.
 - **order_items** — líneas con **snapshot** de nombre y precio al momento de la
-  compra; `itemId` es una FK "blanda" a `products.id`, `kits.id` o `services.id`
-  según `itemType`.
+  compra; cuelgan de `order_suppliers` (no de `orders`), así que la línea sabe
+  quién la entrega sin repetir la columna. `itemId` es una FK "blanda" a
+  `products.id`, `kits.id` o `services.id` según `itemType`.
 - **payments** — pago por **Zelle** (MVP) o Suby.fi (futuro), con su propio ciclo
-  de verificación manual por el admin.
+  de verificación manual por el admin. Uno por **orden**, no por proveedor:
+  partir el Zelle sería peor para quien compra y peor para conciliar.
+
+> **Pendiente.** El modelo ya sabe **de quién** tiene que ser el equipo, pero
+> todavía no sabe **cuál** es: falta la columna que diga a qué equipo ya comprado
+> se refiere un servicio contratado después de la venta. Es la Etapa 9 de
+> [`PLAN.md`](../PLAN.md) y depende de que existan pedidos pagados, así que se
+> diseña cuando los haya.
+>
+> Y falta el otro lado del alcance: hoy nada impide contratar suelto un servicio
+> `OWN` o `PLATFORM` desde su ficha. La regla está decidida (Etapa 5) pero vive
+> en pantallas que aún no existen — el listado del catálogo y el checkout.
 
 ### Convenciones del modelo
 
@@ -227,13 +284,22 @@ Definido en [`lib/db/schema.ts`](../lib/db/schema.ts). Entidades principales:
 ## 5. Máquina de estados de la orden (implementada)
 
 ```
-PENDING_PAYMENT → PAYMENT_REPORTED → PAID → COMPLETED
-                                       │
-                                   CANCELLED
+orders.status            PENDING_PAYMENT → PAYMENT_REPORTED → PAID → COMPLETED
+   (el pago, uno)                                              │
+                                                           CANCELLED
+
+order_suppliers.status   PENDING → DELIVERED        ← una por proveedor
+   (la entrega, N)          └───── CANCELLED
 ```
 
 `payments.status`: `PENDING → REPORTED → CONFIRMED` (o `REJECTED`). El admin
 verifica el Zelle manualmente y confirma, lo que hace avanzar la orden.
+
+Los dos carriles se cruzan en un solo sitio: la orden llega a `COMPLETED` cuando
+**todas** sus partes vivas están en `DELIVERED`. Si se cancelan todas, la orden
+queda `CANCELLED`. Nada más: el pago es global —se cobra o no se cobra el pedido
+entero— y la entrega es de cada proveedor por separado, que es exactamente lo
+que el admin coordina y liquida por su lado.
 
 > Esta máquina de estados coincide con el flujo Zelle descrito en
 > [`PLAN.md`](../PLAN.md) (Fase 1). La integración automática con suby.fi queda

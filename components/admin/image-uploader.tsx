@@ -23,7 +23,7 @@ import { Input } from "@/components/ui/input";
  * cerrado a propósito: el prefijo queda grabado en URLs inmutables que van a la
  * BD, así que un typo aquí no se arregla luego sin migrar ficheros y filas.
  */
-export type BlobFolder = "products" | "kits";
+export type BlobFolder = "products" | "kits" | "services";
 
 export function ImageUploader({
   name = "images",
