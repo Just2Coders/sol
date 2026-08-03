@@ -46,11 +46,8 @@ export function SiteHeader({ session }: { session: SessionPayload | null }) {
       {/* Centro — a dónde se va. En el boceto es un menú desplegable; aquí los
           destinos se escriben en vez de esconderse. */}
       <nav aria-label="Principal" className="flex flex-1 items-center justify-center gap-8">
-        <Link href="/catalog?type=kit" className={navClass}>
-          Kits
-        </Link>
-        <Link href="/catalog?type=product" className={navClass}>
-          Equipos sueltos
+        <Link href="/catalog" className={navClass}>
+          Catálogo
         </Link>
         {session ? (
           <>
@@ -72,7 +69,7 @@ export function SiteHeader({ session }: { session: SessionPayload | null }) {
 
       <div className="flex shrink-0 items-center gap-6">
         <CartPanel className="text-foreground hover:text-primary-loud" />
-        <FlatCta href="/sell" tone="loud" size="md" className="gap-2">
+        <FlatCta href="/sell" tone="outline" size="md" className="gap-2">
           Vender en Solaris
           <ArrowRight aria-hidden className="size-4" />
         </FlatCta>

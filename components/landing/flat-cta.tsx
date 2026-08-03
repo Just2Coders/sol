@@ -29,11 +29,12 @@ const TONE: Record<CtaTone, string> = {
   // Campo de tinta: la acción que no compite con la principal pero sigue siendo
   // un campo sólido.
   ink: "bg-foreground text-background hover:bg-primary-loud hover:text-primary-loud-foreground",
-  // Solo el filete: la salida lateral de una sección ("Ver todos los kits").
-  // Al pasar por encima se llena del mismo acento que los otros dos tonos: en
-  // esta página el hover siempre lleva al naranja, nunca a la tinta.
+  // Secundaria: fondo de página, filete y un oscurecido leve al pasar por
+  // encima — el mismo comportamiento que las pestañas sin seleccionar del
+  // buscador de kits y que el `outline` de la librería de componentes. Nunca
+  // se llena de acento: eso es lo que la deja fuera de la competencia con `loud`.
   outline:
-    "border border-current text-foreground hover:border-primary-loud hover:bg-primary-loud hover:text-primary-loud-foreground",
+    "bg-background border border-foreground text-foreground hover:bg-muted",
 };
 
 const SIZE: Record<CtaSize, string> = {
