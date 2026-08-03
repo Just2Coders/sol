@@ -30,6 +30,17 @@ const SECTIONS = [
     title: "Kits",
     description: "Combos de productos de un proveedor, con precio propio.",
   },
+  {
+    href: "/admin/services",
+    title: "Servicios",
+    description:
+      "Instalación y mantenimiento: cómo se cobran y sobre qué equipo trabajan.",
+  },
+  {
+    href: "/admin/service-categories",
+    title: "Categorías de servicio",
+    description: "Cómo se agrupan los servicios y en qué orden se listan.",
+  },
 ] as const;
 
 export default async function AdminPage() {

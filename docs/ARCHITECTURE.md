@@ -28,7 +28,8 @@
 app/                    Presentación: rutas, páginas (RSC) y Server Actions
   (auth)/               Grupo de rutas de autenticación (login, signup)
   actions/              Server Actions ("use server") — punto de entrada de mutaciones
-  admin/                Panel de administración (rol ADMIN): zones, suppliers, products, kits
+  admin/                Panel de administración (rol ADMIN): zones, suppliers,
+                        products, kits, services, service-categories
   account/              Área del cliente autenticado
   catalog/              Catálogo público: listado y fichas de /products/[slug],
                         /kits/[slug] y /services/[slug]
@@ -60,6 +61,13 @@ lib/                    Lógica de servidor reutilizable (NO específica de una 
     queries.ts          Lecturas del catálogo público (solo activo, por zona)
   products/queries.ts   Lecturas de productos (panel admin)
   kits/queries.ts       Lecturas de kits con sus componentes (panel admin)
+  services/
+    enums.ts            Los valores de `service_pricing` y `equipment_scope`
+                        (puro: lo importan la Action y el formulario)
+    queries.ts          Lecturas de servicios (panel admin) y la guarda de
+                        ofertas sobre equipo ajeno
+  service-categories/queries.ts
+                        Lecturas de categorías, con cuántos servicios las usan
   zones/queries.ts      Lecturas de zonas (jerarquía estado → ciudad)
   zones/preference.ts   Cookie con la zona que eligió el visitante
   suppliers/queries.ts  Lecturas de proveedores (con zonas de cobertura)

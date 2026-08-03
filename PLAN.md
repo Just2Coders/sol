@@ -116,18 +116,24 @@ Decisiones clave:
       El logo del proveedor sigue registrándose por URL.*
 - [x] CRUD de kits: seleccionar productos del proveedor + cantidades, precio propio del kit.
 - [x] Validación: un kit solo puede contener productos de su mismo proveedor.
-> Nada de esta etapa existe todavía en el admin: no hay `app/admin/services`, ni
-> `app/actions/services.ts`, ni `lib/services/`. Las tablas sí existen y el seed
-> las llena, que es de donde saca datos la ficha pública. **El alcance del
-> servicio (`equipment_scope`) ya está en el schema, a propósito antes que estos
-> formularios** — mismo razonamiento que con `orders`: se construyen una sola
-> vez, ya sabiendo lo que tienen que preguntar. Ver «Pedidos multi-proveedor y
-> servicios sobre equipo ajeno» más abajo.
+> El alcance del servicio (`equipment_scope`) entró en el schema **antes** que
+> estos formularios, a propósito — mismo razonamiento que con `orders`: se
+> construyen una sola vez, ya sabiendo lo que tienen que preguntar. Ver «Pedidos
+> multi-proveedor y servicios sobre equipo ajeno» más abajo.
 
-- [ ] CRUD de categorías de servicio (nombre, orden en que se listan).
-- [ ] CRUD de servicios por proveedor: categoría, precio `FLAT` o `PER_UNIT` con
+- [x] CRUD de categorías de servicio (nombre, orden en que se listan).
+      *`/admin/service-categories`, con edición en línea como las zonas: son
+      pocos campos y el orden solo se decide viendo la lista entera. No se borra
+      una categoría en uso — `services.categoryId` no lleva cascade.*
+- [x] CRUD de servicios por proveedor: categoría, precio `FLAT` o `PER_UNIT` con
       su unidad, **alcance** (`OWN` / `PLATFORM` / `ANY`, prefijado con el default
       del proveedor), activar/desactivar.
+      *`/admin/services` con listado, alta y edición. La unidad de obra solo
+      aparece con `PER_UNIT` y se descarta en `FLAT`, para no dejar rótulos
+      huérfanos. El alcance lleva debajo qué significa cada valor: es la decisión
+      con más consecuencias del formulario. Y no se puede cerrar a `OWN` —ni
+      mudar de proveedor— un servicio ya ofrecido sobre equipo ajeno, porque
+      dejaría en el catálogo ofertas que no se podrían cumplir.*
 - [ ] Aviso en el formulario del servicio: si el proveedor no tiene productos ni
       kits, un servicio `OWN` no se podrá vender nunca. No se prohíbe —puede
       estar a punto de cargar su catálogo—, se avisa.
