@@ -24,6 +24,7 @@ export const TEXT_ROLES = [
   "display-2",
   "display-3",
   "display-4",
+  "stat",
   "wordmark",
   "brand",
   "heading-1",

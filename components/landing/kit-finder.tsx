@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Search } from "reicon-react";
+import { ChevronDown, Search } from "reicon-react";
 
 import { cn } from "@/lib/utils";
 
@@ -14,6 +14,15 @@ import { useKitSelection } from "./kit-selection";
  * mitad sobre el fondo de página: es lo que impide que el hero se lea como un
  * cartel cerrado y la página como otra cosa que empieza después. Que sobresalga
  * es el gesto entero — sin desbordar, es una barra más.
+ *
+ * El pliegue de la primera pantalla cae justo sobre esta barra, así que desde
+ * el hero solo se ve su borde superior. El galón existe por eso: un cuadro
+ * suelto, con su filete completo, flotando por encima de la barra —contra la
+ * foto, que ahí abajo está oscura, el papel claro se recorta solo— que cabecea
+ * despacio hacia abajo. Va separado y no cosido al borde: pegado se leía como
+ * una pestaña del propio cajón, y suelto se lee como lo que es, una señal que
+ * apunta a lo que hay debajo. Es lo único que se ve de la sección desde
+ * arriba, y su trabajo es decir que la barra no está cortada, sino que sigue.
  *
  * Los tres kits son un grupo de botones de estado, no enlaces: al pulsar no se
  * navega a ningún sitio, cambia el contenido de "Elige quién te lo instala" un
@@ -30,7 +39,21 @@ export function KitFinder({ className }: { className?: string }) {
 
   return (
     <div className={cn("px-gutter flex justify-center", className)}>
-      <div className="bg-card border-foreground flex flex-wrap items-center justify-center gap-x-7 gap-y-4 border px-7 py-5">
+      <div className="bg-card border-foreground relative flex flex-wrap items-center justify-center gap-x-7 gap-y-4 border px-7 py-5">
+        {/* El galón va suelto por encima de la barra, con su filete completo:
+            separado se lee como una señal —una pieza aparte que apunta a lo que
+            hay debajo— y no como una pestaña del propio cajón. El contenedor ya
+            va centrado porque la animación escribe `transform`, y un
+            `-translate-x-1/2` en el mismo elemento se lo comería. */}
+        <div className="absolute inset-x-0 -top-11 flex justify-center">
+          <div className="bg-card border-foreground flex h-7 items-center border px-3">
+            <ChevronDown
+              aria-hidden
+              className="text-foreground animate-nudge size-4"
+            />
+          </div>
+        </div>
+
         <p className="text-caption text-foreground font-bold">Elige tu kit</p>
 
         <div

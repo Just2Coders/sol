@@ -37,14 +37,14 @@ export function Trust() {
         ))}
 
         <dl className="bg-background flex flex-col gap-8 pt-8 pb-2 md:flex-row md:gap-12">
-          {TRUST_TERMS.map((term) => (
+          {/* {TRUST_TERMS.map((term) => (
             <div key={term.question} className="flex flex-col gap-1.5 md:flex-1">
               <dt className="text-label tracking-mono-sm text-foreground font-mono uppercase">
                 {term.question}
               </dt>
               <dd className="text-body-xs text-foreground">{term.answer}</dd>
             </div>
-          ))}
+          ))} */}
         </dl>
       </div>
     </section>
@@ -64,7 +64,7 @@ function TeamBlock({ team }: { team: TrustTeam }) {
         <h3 className="text-heading-1 text-foreground">{team.headline}</h3>
 
         <div>
-          <FlatCta href="/#supplier" size="sm">
+          <FlatCta href="/sell" size="sm">
             {team.cta}
           </FlatCta>
         </div>

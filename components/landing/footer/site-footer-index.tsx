@@ -7,7 +7,7 @@ import {
   CATALOG_LINKS,
   CONTACT,
   FINE_PRINT,
-  SUPPLIER_ANCHOR,
+  SUPPLIER_HREF,
   type FooterLink,
 } from "./footer-data";
 
@@ -79,7 +79,7 @@ export async function SiteFooterIndex() {
           <FooterColumn
             title="proveedores"
             links={[
-              { label: "Trabaja con nosotros", href: SUPPLIER_ANCHOR },
+              { label: "Trabaja con nosotros", href: SUPPLIER_HREF },
               { label: "Escríbenos", href: `mailto:${CONTACT.email}` },
             ]}
           />

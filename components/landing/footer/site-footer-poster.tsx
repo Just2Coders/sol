@@ -7,7 +7,7 @@ import {
   CATALOG_LINKS,
   CONTACT,
   FINE_PRINT,
-  SUPPLIER_ANCHOR,
+  SUPPLIER_HREF,
   type FooterLink,
 } from "./footer-data";
 
@@ -70,7 +70,7 @@ export async function SiteFooterPoster() {
           links={[
             { label: CONTACT.whatsapp, href: CONTACT.whatsappHref },
             { label: CONTACT.email, href: `mailto:${CONTACT.email}` },
-            { label: "¿Eres proveedor?", href: SUPPLIER_ANCHOR },
+            { label: "¿Eres proveedor?", href: SUPPLIER_HREF },
           ]}
         />
       </nav>

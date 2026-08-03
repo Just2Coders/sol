@@ -115,7 +115,7 @@ export function Faq() {
                   aria-expanded={expanded}
                   aria-controls={panelId}
                   onClick={() => toggle(item.question)}
-                  className="text-heading-3 text-foreground flex w-full items-center justify-between gap-6 py-6 text-left"
+                  className="text-heading-3 text-foreground flex w-full items-center justify-between gap-6 pt-4 pb-3 text-left"
                 >
                   {item.question}
                   <span
@@ -142,12 +142,13 @@ export function Faq() {
               >
                 {/* El hijo recorta: la fila de 0fr no oculta nada por sí sola. */}
                 <div className="overflow-hidden">
-                  {/* Más aire debajo que encima: así la respuesta se agrupa con
-                      su pregunta y no queda flotando a medio camino del filete
-                      siguiente. */}
+                  {/* Un poco más de aire debajo que encima —la pregunta ya trae
+                      su propio `py-6`—, lo justo para que la respuesta se
+                      agrupe con su pregunta sin quedar flotando a medio camino
+                      del filete siguiente. */}
                   <p
                     className={cn(
-                      "text-body-sm text-muted-foreground ease-standard max-w-[72ch] pb-9 transition-opacity duration-slow",
+                      "text-body-sm text-muted-foreground ease-standard max-w-[72ch] pb-6 transition-opacity duration-slow",
                       expanded ? "opacity-100" : "opacity-0",
                     )}
                   >
