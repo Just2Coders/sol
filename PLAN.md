@@ -118,8 +118,8 @@ Decisiones clave:
 - [x] Validación: un kit solo puede contener productos de su mismo proveedor.
 > Nada de esta etapa existe todavía en el admin: no hay `app/admin/services`, ni
 > `app/actions/services.ts`, ni `lib/services/`. Las tablas sí existen y el seed
-> las llena, que es de donde saca datos la ficha pública. **Por eso el alcance
-> del servicio (`equipment_scope`) entra en el schema antes que estos
+> las llena, que es de donde saca datos la ficha pública. **El alcance del
+> servicio (`equipment_scope`) ya está en el schema, a propósito antes que estos
 > formularios** — mismo razonamiento que con `orders`: se construyen una sola
 > vez, ya sabiendo lo que tienen que preguntar. Ver «Pedidos multi-proveedor y
 > servicios sobre equipo ajeno» más abajo.
@@ -320,6 +320,12 @@ _(La `0003` añade una columna `NOT NULL` sin default: solo funciona porque
   ya no es que sea lo único que cabe en el carrito.
 
 ### Paso 2 — El servicio dice sobre qué equipo trabaja
+
+✅ **Hecho** en `feature/multi-supplier-orders`. Queda **inerte hasta la Etapa 4**:
+no hay formulario que cree una oferta cruzada ni que ponga un servicio en
+`PLATFORM`/`ANY`, así que hoy la consulta admite lo que antes prohibía pero no
+existe todavía ningún dato que lo ejerza. Que es justo el orden que se buscaba —
+la pregunta ya está en el modelo cuando se escriba el formulario.
 
 **Modelo** (migración `0005`):
 

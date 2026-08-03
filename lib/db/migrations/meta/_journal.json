@@ -36,6 +36,13 @@
       "when": 1785723830352,
       "tag": "0004_order_items_hang_from_part",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1785725004380,
+      "tag": "0005_service_equipment_scope",
+      "breakpoints": true
     }
   ]
 }

@@ -152,15 +152,19 @@ justamente para no depender de la otra consulta, porque con Neon por HTTP dos
 saltos en serie son dos latencias.
 
 Quien instala no es siempre quien vende: un servicio que no sea `OWN` puede
-ofrecerse junto al equipo de otro proveedor (pendiente de la migración `0005`,
-ver §4). Por eso cada fila de esa lista dice de quién es, la
-línea de carrito que arma guarda **el proveedor del servicio** (no el del equipo:
-es lo que decide en qué grupo del pedido cae y a quién se le liquida), y la
-consulta filtra por zona cuando el instalador es ajeno — si fuera el mismo que
-vende, la cobertura ya se dio por buena al llegar a la ficha. Ojo con `extras` de la query relacional de
-drizzle: reescribe las referencias de columna apuntándolas a la tabla exterior,
-así que una subconsulta correlacionada contra otras tablas **no** se puede
-escribir ahí.
+ofrecerse junto al equipo de otro proveedor. Por eso la fila dice de quién es
+cuando no coincide con el vendedor, y la línea de carrito que arma guarda **el
+proveedor del servicio** y no el del equipo — es lo que decide en qué parte del
+pedido cae y a quién se le liquida.
+
+> **Pendiente.** Esa lista todavía no filtra por zona, y con un instalador ajeno
+> hace falta: que el visitante llegara a la ficha solo prueba que el **vendedor**
+> cubre su zona. Es el paso 3 de [`PLAN.md`](../PLAN.md), y necesita que la zona
+> del visitante baje hasta la consulta.
+
+Ojo con `extras` de la query relacional de drizzle: reescribe las referencias de
+columna apuntándolas a la tabla exterior, así que una subconsulta correlacionada
+contra otras tablas **no** se puede escribir ahí.
 
 Los filtros del catálogo viven en la **URL**, no en estado de cliente
 (`lib/catalog/filters.ts` los traduce en ambos sentidos): así una búsqueda se
@@ -245,17 +249,15 @@ Definido en [`lib/db/schema.ts`](../lib/db/schema.ts). Entidades principales:
   de verificación manual por el admin. Uno por **orden**, no por proveedor:
   partir el Zelle sería peor para quien compra y peor para conciliar.
 
-> **Pendiente.** Falta la migración **`0005`**: `equipmentScope` y
-> `defaultEquipmentScope` no existen aún, así que hoy la instalación la presta
-> siempre quien vende (lo impone el filtro de `getInstallationsFor`) y cualquier
-> servicio se puede contratar suelto, quiera o no su proveedor. Entra antes que
-> el CRUD de servicios de la Etapa 4, que tampoco existe todavía. Está detallada
-> en [`PLAN.md`](../PLAN.md) §«Pedidos multi-proveedor y servicios sobre equipo
-> ajeno», paso 2.
+> **Pendiente.** El modelo ya sabe **de quién** tiene que ser el equipo, pero
+> todavía no sabe **cuál** es: falta la columna que diga a qué equipo ya comprado
+> se refiere un servicio contratado después de la venta. Es la Etapa 9 de
+> [`PLAN.md`](../PLAN.md) y depende de que existan pedidos pagados, así que se
+> diseña cuando los haya.
 >
-> Y falta una columna que **todavía no toca decidir**: de qué equipo ya comprado
-> es un servicio contratado después de la venta. Es la Etapa 9 del plan y depende
-> de que existan pedidos pagados, así que se diseña cuando los haya.
+> Y falta el otro lado del alcance: hoy nada impide contratar suelto un servicio
+> `OWN` o `PLATFORM` desde su ficha. La regla está decidida (Etapa 5) pero vive
+> en pantallas que aún no existen — el listado del catálogo y el checkout.
 
 ### Convenciones del modelo
 

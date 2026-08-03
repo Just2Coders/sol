@@ -76,6 +76,23 @@ export const servicePricing = pgEnum("service_pricing", ["FLAT", "PER_UNIT"]);
 /** Lo que se puede instalar: un producto suelto o un kit. Nunca otro servicio. */
 export const installableType = pgEnum("installable_type", ["PRODUCT", "KIT"]);
 
+/**
+ * Sobre qué equipo trabaja un servicio. De más estrecho a más ancho.
+ *
+ * `PLATFORM` y `ANY` son los dos "acepto equipo ajeno" y casi siempre se
+ * preguntan juntos (`scope !== "OWN"`). Se separan en una sola cosa, pero
+ * decisiva: **de quién es el equipo es un dato mientras lo vendiera Solaris**
+ * —está en `order_items` de un pedido pagado, con su proveedor al lado— y una
+ * promesa del cliente cuando viene de fuera. Por eso solo `ANY` puede
+ * contratarse a ciegas desde su propia ficha; los otros dos tienen que llegar
+ * con su equipo.
+ */
+export const equipmentScope = pgEnum("equipment_scope", [
+  "OWN", // solo lo que vendió su propio proveedor
+  "PLATFORM", // también lo que vendió otro proveedor de Solaris
+  "ANY", // también lo que el comprador consiguió fuera de la plataforma
+]);
+
 // ─── Zonas ───────────────────────────────────────────────────────────────────
 // Jerarquía simple: estado (parentId null) → ciudad/municipio (parentId = estado).
 
@@ -118,6 +135,13 @@ export const suppliers = pgTable("suppliers", {
   notes: text("notes"),
   // Datos para liquidarle manualmente (banco, zelle, etc.). Solo visible para el admin.
   payoutInfo: text("payout_info"),
+  /**
+   * Con qué alcance **nacen** sus servicios: es el valor que trae puesto el
+   * formulario, y nada más. Ninguna consulta lo lee para resolver qué se ofrece
+   * —eso siempre sale de `services.equipmentScope`, que va escrito en la fila—,
+   * así que cambiarlo no mueve los servicios que ya existen.
+   */
+  defaultEquipmentScope: equipmentScope("default_equipment_scope").notNull().default("OWN"),
   active: boolean("active").notNull().default(true),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
@@ -250,6 +274,10 @@ export const services = pgTable(
     // La unidad de obra que se multiplica ("panel", "metro de cable"). Solo
     // tiene sentido con `pricing = PER_UNIT`; en `FLAT` va null.
     unitLabel: text("unit_label"),
+    // Sobre qué equipo trabaja. El default cerrado no es pereza: abrirse a
+    // equipo ajeno significa responder por lo que no vendiste, y eso se decide
+    // a mano.
+    equipmentScope: equipmentScope("equipment_scope").notNull().default("OWN"),
     images: text("images").array().notNull().default([]),
     active: boolean("active").notNull().default(true),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
