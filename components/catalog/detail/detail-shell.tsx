@@ -13,15 +13,18 @@ import type { CatalogPhoto } from "@/lib/catalog/photos";
  * De ahí el reparto en escritorio:
  *
  * 1. **Las fotos** tienen su propio scroll. Recorrerlas no mueve el precio.
- * 2. **La cabecera de datos** (`head`: qué es, cuánto cuesta, el botón) no
- *    scrollea con nada. Es la decisión de compra: sale de pantalla solo cuando
- *    el visitante se va de la página, no cuando baja a leer la letra pequeña.
- * 3. **Las secciones plegadas y lo demás del proveedor** son lo único que se
- *    recorre en la columna derecha, y lo hacen entre la cabecera y el pie.
- * 4. **El pie** (`footer`: hasta dónde llega el proveedor) tampoco se mueve. Es
- *    la otra mitad de la decisión —el botón de arriba no sirve de nada si el
- *    equipo no llega a donde vive quien mira— y por eso acompaña al botón en
- *    vez de esperar al final del scroll.
+ * 2. **La columna de datos** (`head` y las secciones plegadas) scrollea entera
+ *    y junta. El nombre y el botón de comprar iban clavados arriba, pero eso
+ *    le dejaba a lo demás —descripción, ficha técnica, alcance— una franja tan
+ *    baja que apenas se leía una línea sin mover el cursor: la cabecera pesaba
+ *    más que el contenido que la sigue.
+ *
+ * Las dos columnas llevan `lg:min-h-0` además de `lg:h-full`: sin él, un hijo
+ * flex no se encoge por debajo del alto de su contenido aunque el padre tenga
+ * alto fijo, así que la columna crecía con el acordeón entero en vez de
+ * quedarse clavada al alto de la fila y dejar que su propio `overflow-y-auto`
+ * hiciera el scroll interno — el síntoma era un scroll de más al desplazarse
+ * cerca de la cabecera de una sección.
  *
  * `overscroll-contain` en las dos zonas con scroll evita que al llegar al final
  * de una se arrastre la de al lado. En móvil no hay dos columnas que cuadrar:
@@ -40,20 +43,17 @@ export function CatalogDetailShell({
   photos,
   fallbackAlt,
   head,
-  footer,
   children,
 }: {
   photos: CatalogPhoto[];
   fallbackAlt: string;
   /** La cabecera fija de la columna derecha: `CatalogDetailHead`. */
   head: React.ReactNode;
-  /** El pie fijo: la cobertura del proveedor (`CatalogSupplierCoverage`). */
-  footer?: React.ReactNode;
   /** Lo que se recorre: el acordeón de secciones y la tira de relacionados. */
   children: React.ReactNode;
 }) {
   return (
-    <main className="min-h-0 flex-1 scroll-smooth overflow-y-auto motion-reduce:scroll-auto lg:grid lg:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)] lg:overflow-hidden">
+    <main className="min-h-0 flex-1 scroll-smooth overflow-y-auto motion-reduce:scroll-auto lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)] lg:overflow-hidden">
       {/* La envoltura existe para anclar la salida: el enlace es hermano de la
           tira de fotos, no hijo, así que no se mueve cuando la tira scrollea.
           Lleva el papel de la ficha —el mismo al que el duotono recorta las
@@ -66,15 +66,15 @@ export function CatalogDetailShell({
         {/* La salida, clavada sobre la primera foto. Sin texto: una flecha atrás
             sobre una foto es de las pocas señales que no necesitan rótulo, y el
             nombre se lo lleva escrito para quien no la ve.
-            Mismo `outline` que los botones de cantidad: los tres son controles
-            secundarios de la ficha —moverse, sumar, restar— y ninguno es la
-            acción, que la quiere entera el botón de comprar. La sombra es la que
-            le toca a algo que flota sobre una imagen. */}
+            En tinta y no en el `outline` de los botones de cantidad: aquellos
+            son controles sobre papel, este flota sobre una foto y necesita su
+            propio contraste — el mismo `canvas`/`canvas-foreground` de las
+            etiquetas de foto de al lado, no un tono nuevo. */}
         <Button
           asChild
           variant="outline"
           size="icon-lg"
-          className="absolute top-4 left-4 z-10 shadow-sm lg:top-6 lg:left-6"
+          className="border-canvas bg-canvas text-canvas-foreground hover:bg-canvas/90 absolute top-4 left-4 z-10 shadow-sm lg:top-6 lg:left-6"
         >
           <Link href="/catalog" title="Volver al catálogo">
             <ArrowLeft aria-hidden />
@@ -89,14 +89,9 @@ export function CatalogDetailShell({
           foto ya marca dónde acaba una y empieza la otra. En móvil sí queda la
           línea: ahí la foto se acuesta encima de los datos y el pliegue es lo
           único que separa dos cosas del mismo tono. */}
-      <div className="bg-card border-border flex min-h-0 flex-col border-t lg:h-full lg:border-t-0">
-        <div className="shrink-0">{head}</div>
-
-        <div className="lg:min-h-0 lg:flex-1 lg:overflow-y-auto lg:overscroll-contain">
-          {children}
-        </div>
-
-        <div className="shrink-0">{footer}</div>
+      <div className="bg-card border-border flex min-h-0 flex-col border-t lg:h-full lg:min-h-0 lg:overflow-y-auto lg:overscroll-contain lg:border-t-0">
+        {head}
+        {children}
       </div>
     </main>
   );

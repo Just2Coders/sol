@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { Package, Shop, Text } from "reicon-react";
 
 import { CatalogInstallations } from "@/components/catalog/catalog-installations";
 import {
@@ -10,13 +9,10 @@ import {
 import { CatalogDetailHead } from "@/components/catalog/detail/detail-head";
 import { CatalogDetailShell } from "@/components/catalog/detail/detail-shell";
 import { CatalogKitComponents } from "@/components/catalog/detail/kit-components";
-import {
-  CatalogSupplierBlock,
-  CatalogSupplierCoverage,
-} from "@/components/catalog/detail/supplier-block";
-import { CatalogSupplierRelated } from "@/components/catalog/detail/supplier-related";
+import { CatalogSupplierReach } from "@/components/catalog/detail/supplier-block";
+// import { CatalogSupplierRelated } from "@/components/catalog/detail/supplier-related";
 import { kitPhotos, photographedComponents } from "@/lib/catalog/photos";
-import { getCatalogKit, getSupplierRelated } from "@/lib/catalog/queries";
+import { getCatalogKit } from "@/lib/catalog/queries";
 
 type KitPageProps = { params: Promise<{ slug: string }> };
 
@@ -51,13 +47,6 @@ export default async function KitPage({ params }: KitPageProps) {
   const kit = await getCatalogKit((await params).slug);
   if (!kit) notFound();
 
-  // Lo demás del proveedor. Se pide después del kit y no en paralelo porque
-  // necesita su slug, pero es una sola lectura corta y ya cacheada.
-  const related = await getSupplierRelated(kit.supplier.slug, {
-    type: "KIT",
-    slug: kit.slug,
-  });
-
   // La columna de fotos de un kit se arma con las suyas y una por componente:
   // es el inventario visible del conjunto, y el destino del salto desde la
   // lista de la derecha.
@@ -67,7 +56,6 @@ export default async function KitPage({ params }: KitPageProps) {
     <CatalogDetailShell
       photos={photos}
       fallbackAlt={kit.name}
-      footer={<CatalogSupplierCoverage supplier={kit.supplier} />}
       head={
         <CatalogDetailHead
           kind="kit"
@@ -87,6 +75,12 @@ export default async function KitPage({ params }: KitPageProps) {
             // Un kit no lleva stock propio: se arma con lo que haya.
             stock: null,
           }}
+          installations={
+            <CatalogInstallations
+              installations={kit.installations}
+              supplier={kit.supplier}
+            />
+          }
         />
       }
     >
@@ -94,11 +88,7 @@ export default async function KitPage({ params }: KitPageProps) {
           valor que no tenga fila —un kit sin descripción— se ignora solo. */}
       <CatalogDetailAccordion defaultOpen={["description", "components"]}>
         {kit.description && (
-          <CatalogDetailAccordionRow
-            value="description"
-            label="descripción"
-            icon={Text}
-          >
+          <CatalogDetailAccordionRow value="description" label="Descripción">
             <p className="text-muted-foreground text-body max-w-[60ch]">
               {kit.description}
             </p>
@@ -106,12 +96,8 @@ export default async function KitPage({ params }: KitPageProps) {
         )}
 
         {kit.items.length > 0 && (
-          <CatalogDetailAccordionRow
-            value="components"
-            label="qué incluye"
-            icon={Package}
-          >
-            <div className="border-border border-t">
+          <CatalogDetailAccordionRow value="components" label="Qué incluye">
+            <div className="border-border border-t pt-5">
               <CatalogKitComponents
                 items={kit.items}
                 photographed={photographedComponents(photos)}
@@ -121,24 +107,16 @@ export default async function KitPage({ params }: KitPageProps) {
           </CatalogDetailAccordionRow>
         )}
 
-        <CatalogInstallations
-          installations={kit.installations}
-          supplier={kit.supplier}
-        />
-
-        <CatalogDetailAccordionRow
-          value="supplier"
-          label="proveedor"
-          icon={Shop}
-        >
-          <CatalogSupplierBlock supplier={kit.supplier} />
+        <CatalogDetailAccordionRow value="scope" label="Alcance">
+          <CatalogSupplierReach supplier={kit.supplier} />
         </CatalogDetailAccordionRow>
       </CatalogDetailAccordion>
 
-      <CatalogSupplierRelated
+      {/* Desactivada hasta mejorar su diseño — ver CatalogSupplierRelated. */}
+      {/* <CatalogSupplierRelated
         items={related}
         supplierName={kit.supplier.name}
-      />
+      /> */}
     </CatalogDetailShell>
   );
 }

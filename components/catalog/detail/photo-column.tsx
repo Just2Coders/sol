@@ -59,7 +59,7 @@ export function CatalogPhotoColumn({
           {/* El rótulo solo lo llevan las fotos de un componente: es lo que
               conecta esta foto con su línea en la lista de la derecha. */}
           {photo.caption && (
-            <figcaption className="bg-card text-foreground text-marginalia absolute bottom-4 left-4 max-w-[calc(100%-2rem)] truncate rounded-md px-3 py-1.5 font-mono">
+            <figcaption className="bg-canvas text-canvas-foreground text-marginalia absolute bottom-4 left-4 max-w-[calc(100%-2rem)] truncate rounded-md px-3 py-1.5 font-mono">
               {photo.caption}
             </figcaption>
           )}
