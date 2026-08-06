@@ -1,7 +1,9 @@
 "use client";
 
+import { useActionState } from "react";
 import { Check } from "reicon-react";
 
+import { createSupplierLead } from "@/app/actions/supplier-leads";
 import { flatCtaClass } from "@/components/landing/flat-cta";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -12,126 +14,146 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { PROVINCES, useLeadPrototype } from "./prototype-kit";
+import { PROVINCES } from "@/lib/zones/provinces";
+
+const FIELD_CLASS =
+  "border-input bg-card text-body focus-visible:ring-ring h-12 w-full rounded-md px-4 focus-visible:ring-2";
 
 /**
- * El alta de proveedor, ya como página propia (`/sell`).
+ * El alta de proveedor, en la mitad clara de `/sell` (ver `SellBrandPanel`
+ * para la mitad oscura, que lleva el argumento y la prueba).
  *
- * No lleva tarjeta ni campos encajonados: hereda la gramática del comparador
- * de kits —retícula, filetes de 1px y rótulos mono a la izquierda— y la usa
- * para que el formulario se lea como un impreso de alta. La fila *es* el
- * campo, y el valor se escribe a tamaño de titular pequeño, así que lo que el
- * proveedor teclea pesa más que la etiqueta que lo pide.
- *
- * Es la razón del cambio de estilo: metido en una caja `bg-card` con inputs
- * redondeados y un botón de librería, esto se leía como un formulario
- * cualquiera pegado encima de la página. Sin caja y con el filete como única
- * línea, pertenece.
- *
- * ⚠️ SIN CABLEAR — `useLeadPrototype` finge el ciclo y muestra el acuse sin
- * guardar nada. Antes de que esto salga a producción hay que sustituirlo por
- * una Server Action con Zod que persista el lead (o lo mande por Resend); si
- * no, el proveedor cree que se apuntó y nadie recibe nada.
+ * Campos con caja de verdad —borde, fondo `bg-card`, radio `rounded-md`—, no
+ * el impreso sin marco de la primera versión: esa se leía como texto suelto
+ * sobre la página, no como un formulario. El envío persiste de verdad, vía
+ * `createSupplierLead` (`app/actions/supplier-leads.ts`) → tabla
+ * `supplier_leads`.
  */
 export function SupplierApplicationForm() {
-  const { status, draft, onSubmit } = useLeadPrototype();
+  const [state, formAction, pending] = useActionState(
+    createSupplierLead,
+    undefined,
+  );
 
-  if (status === "sent") {
-    return <SentNotice business={draft.business} province={draft.province} />;
+  if (state?.success) {
+    return (
+      <SentNotice
+        business={state.business ?? ""}
+        province={state.province ?? ""}
+      />
+    );
   }
 
   return (
-    <form onSubmit={onSubmit}>
-      <FormRow htmlFor="sell-business" label="negocio o nombre">
-        <Input
-          id="sell-business"
-          name="business"
-          required
-          autoComplete="organization"
-          placeholder="Solar del Este"
-          className="text-heading-3 focus-visible:ring-ring h-16 rounded-md border-0 bg-transparent px-4 focus-visible:ring-2"
-        />
-      </FormRow>
-
-      <FormRow htmlFor="sell-province" label="provincia">
-        <Select name="province" required>
-          <SelectTrigger
-            id="sell-province"
-            className="text-heading-3 focus-visible:ring-ring h-16 w-full rounded-md border-0 px-4 focus-visible:ring-2"
-          >
-            <SelectValue placeholder="Escoge una" />
-          </SelectTrigger>
-          <SelectContent>
-            {PROVINCES.map((province) => (
-              <SelectItem key={province} value={province}>
-                {province}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </FormRow>
-
-      <FormRow htmlFor="sell-contact" label="whatsapp o correo">
-        <Input
-          id="sell-contact"
-          name="contact"
-          required
-          placeholder="+53 5 123 4567"
-          className="text-heading-3 focus-visible:ring-ring h-16 rounded-md border-0 bg-transparent px-4 focus-visible:ring-2"
-        />
-      </FormRow>
-
-      {/* El filete de cierre y, debajo, la acción — alineada con la columna del
-          valor, no con la de los rótulos. */}
-      <div className="border-border flex flex-col items-start gap-4 border-t pt-8 sm:flex-row sm:items-center sm:justify-between">
-        <button
-          type="submit"
-          disabled={status === "sending"}
-          className={flatCtaClass(
-            "loud",
-            "lg",
-            "disabled:bg-primary-disabled disabled:cursor-not-allowed",
-          )}
-        >
-          {status === "sending" ? "Enviando…" : "Enviar solicitud"}
-        </button>
-        <p className="text-muted-foreground text-marginalia font-mono">
-          estos datos solo los ve el equipo de Solaris
+    <form action={formAction} className="flex w-full max-w-105 flex-col gap-6">
+      <div className="flex flex-col gap-2">
+        <p className="text-emphasis text-marginalia tracking-mono-lg font-mono uppercase">
+          solicitud
         </p>
+        <h1 className="text-foreground text-heading-1">
+          Cuéntanos de tu negocio
+        </h1>
       </div>
+
+      <div className="flex flex-col gap-4">
+        <Field
+          htmlFor="sell-business"
+          label="Negocio o nombre"
+          error={state?.errors?.business?.[0]}
+        >
+          <Input
+            id="sell-business"
+            name="business"
+            required
+            autoComplete="organization"
+            placeholder="Solar del Este"
+            className={FIELD_CLASS}
+          />
+        </Field>
+
+        <Field
+          htmlFor="sell-province"
+          label="Provincia"
+          error={state?.errors?.province?.[0]}
+        >
+          <Select name="province" required>
+            <SelectTrigger id="sell-province" className={FIELD_CLASS}>
+              <SelectValue placeholder="Escoge una" />
+            </SelectTrigger>
+            <SelectContent>
+              {PROVINCES.map((province) => (
+                <SelectItem key={province} value={province}>
+                  {province}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </Field>
+
+        <Field
+          htmlFor="sell-contact"
+          label="WhatsApp o correo"
+          error={state?.errors?.contact?.[0]}
+        >
+          <Input
+            id="sell-contact"
+            name="contact"
+            required
+            placeholder="+53 5 123 4567"
+            className={FIELD_CLASS}
+          />
+        </Field>
+      </div>
+
+      {state?.message && (
+        <p className="text-destructive text-body-xs">{state.message}</p>
+      )}
+
+      <button
+        type="submit"
+        disabled={pending}
+        className={flatCtaClass(
+          "loud",
+          "lg",
+          "w-full disabled:bg-primary-disabled disabled:cursor-not-allowed",
+        )}
+      >
+        {pending ? "Enviando…" : "Enviar solicitud"}
+      </button>
+
+      <p className="text-muted-foreground text-marginalia text-center font-mono">
+        estos datos solo los ve el equipo de Solaris
+      </p>
     </form>
   );
 }
 
-/**
- * Una fila del impreso: rótulo mono a la izquierda, campo a la derecha. En
- * móvil el rótulo se sube encima del campo — la fila de dos columnas no cabe
- * sin encoger el valor, que es justo lo que no queremos.
- */
-function FormRow({
+/** Rótulo encima del campo — la caja del campo ya lleva su propio borde. */
+function Field({
   htmlFor,
   label,
+  error,
   children,
 }: {
   htmlFor: string;
   label: string;
+  error?: string;
   children: React.ReactNode;
 }) {
   return (
-    <div className="border-border grid items-center gap-1 border-t py-4 md:grid-cols-[13rem_minmax(0,1fr)] md:gap-6">
+    <div className="flex flex-col gap-1.5">
       <Label
         htmlFor={htmlFor}
-        className="text-muted-foreground text-marginalia px-4 font-mono md:px-0"
+        className="text-foreground text-body-sm font-medium"
       >
         {label}
       </Label>
       {children}
+      {error && <p className="text-destructive text-body-xs">{error}</p>}
     </div>
   );
 }
 
-// El acuse mantiene el filete y el ritmo del impreso: la ficha no desaparece,
-// queda sellada.
 function SentNotice({
   business,
   province,
@@ -142,10 +164,12 @@ function SentNotice({
   return (
     <div
       role="status"
-      className="border-border animate-in fade-in-0 slide-in-from-bottom-2 duration-slow ease-standard border-t border-b py-12"
+      className="animate-in fade-in-0 slide-in-from-bottom-2 duration-slow ease-standard flex w-full max-w-105 flex-col items-start"
     >
       <Check aria-hidden className="text-success size-8" />
-      <p className="text-foreground text-heading-1 mt-4">Solicitud enviada.</p>
+      <p className="text-foreground text-heading-1 mt-4">
+        Solicitud enviada.
+      </p>
       <p className="text-muted-foreground text-marginalia mt-3 font-mono">
         {business || "tu negocio"} · {province || "sin provincia"} · te
         escribimos al contacto que dejaste
