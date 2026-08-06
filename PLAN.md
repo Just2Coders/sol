@@ -24,7 +24,9 @@ users          id, name, email, password_hash, role (ADMIN | SUPPLIER | CUSTOMER
                phone, zone_id
 zones          id, name, state, parent_id?        ← jerarquía: estado → ciudad/municipio
 suppliers      id, name, slug, logo, phone, email, notes, payout_info (datos para
-               liquidarles), default_equipment_scope   ← con qué alcance nacen sus servicios
+               liquidarles), default_equipment_scope,  ← con qué alcance nacen sus servicios
+               reservation_hold_hours?            ← cuánto aguanta reservado lo suyo (null = el
+                                                    default de la plataforma, 72 h)
 supplier_zones supplier_id, zone_id               ← en qué zonas opera cada proveedor
 supplier_users supplier_id, user_id               ← quién puede gestionar en nombre de quién
 impersonation_sessions  id, actor_user_id, target_user_id, reason, started_at,
@@ -40,7 +42,10 @@ services       id, supplier_id, category_id, name, slug, description,
 installation_offers service_id, target_type (PRODUCT | KIT), target_id
                                                    ← qué instalación se ofrece con qué item;
                                                      cruza de proveedor si el servicio no es OWN
-orders         id, order_number, user_id, zone_id, status, subtotal, total, created_at
+orders         id, order_number, user_id, zone_id, status, subtotal, total,
+               acknowledged_total,                 ← la última cifra que el comprador aceptó
+               expires_at,                         ← la más temprana de sus reservas vivas
+               created_at
 order_suppliers id, order_id, supplier_id, subtotal, confirmation_due_at,
                 confirmed_at, resolved_at, decline_reason,
                 status (PENDING | CONFIRMED | DELIVERED | DECLINED | CANCELLED)
@@ -56,7 +61,9 @@ stock_movements     id, product_id, delta, reason (OPENING | RESTOCK | SALE | RE
                                                    ← el porqué de cada cambio de saldo
 stock_reservations  id, order_supplier_id, product_id, quantity, expires_at,
                     status (HELD | CONSUMED | RELEASED)
-                                                   ← lo comprometido y todavía sin cobrar
+                                                   ← lo comprometido y todavía sin cobrar;
+                                                     `expires_at` es absoluto y se escribe una
+                                                     vez, como el snapshot de precio
 restocks            id, product_id, quantity, eta_from, eta_to, note, resolved_at,
                     status (ANNOUNCED | ARRIVED | CANCELLED | EXPIRED)
                                                    ← la reposición prometida, con ventana
@@ -177,6 +184,33 @@ Decisiones clave:
   tener ningún sentido. Se le avisa de **quién** no pudo y **por qué**, con el total
   que quedaría, y elige entre tres: **seguir** con los que aceptaron, **editar**
   el pedido, o **cancelarlo** entero. Mientras no elija, el pedido no avanza.
+- **Un solo reloj, y lo pone el proveedor más impaciente.** Retener stock le cuesta
+  dinero a quien lo tiene —es mercancía que no le vende al que entra por la puerta—,
+  así que cuánto aguanta reservado lo suyo lo decide él (`reservation_hold_hours`,
+  72 h por defecto). Pero un pedido con tres proveedores tendría tres vencimientos, y
+  eso no se le puede enseñar a nadie: lo que vale es **el más temprano**, porque en
+  cuanto caduca uno el pedido ya no se puede completar entero. `orders.expires_at`
+  es esa derivada, y es el único número que ve el comprador.
+  _Y por eso el plazo del comprador para pagar **no es un ajuste aparte**: es ese
+  mismo instante. Dos relojes distintos tarde o temprano se contradicen; aquí no
+  hay dos._
+- **El vencimiento se escribe al reservar y ya no se mueve.** `expires_at` es
+  absoluto, calculado con el `reservation_hold_hours` que el proveedor tenía en ese
+  momento — mismo criterio que el snapshot de precio de `order_items`. Si mañana
+  cambia de idea, los pedidos en curso no se le mueven debajo. _Ojo a la diferencia
+  con `default_equipment_scope`, que solo prefija un formulario y no lo lee nadie:
+  este sí se lee, pero una sola vez y para dejarlo escrito._
+- **El suelo no lo pone la plataforma, lo pone el medio de pago.** Un proveedor que
+  solo retenga 12 h no es irrazonable, pero con Zelle manual —que tarda días entre
+  reportar y verificar— sus productos no se pueden llegar a comprar. Así que el
+  mínimo no es una regla arbitraria: es el tiempo que necesita la pasarela más lenta
+  que esté habilitada. Con QvaPay (Etapa 11) el pago es inmediato y ese suelo baja
+  solo, sin tocar nada.
+- **Una parte que se cae puede alargar el pedido, no acortarlo.** Como
+  `expires_at` es el mínimo de las reservas **vivas**, si el proveedor impaciente es
+  justo el que rechaza, su reserva se libera y el mínimo se recalcula sobre los que
+  quedan — el comprador gana tiempo para decidir sin que nadie se lo regale. Lo que
+  **no** hay en la Fase 1 es prórroga: nadie retiene más de lo que dijo.
 - **Lo que el comprador aceptó pagar se guarda** (`orders.acknowledged_total_usd`).
   De ahí sale todo lo demás sin inventar estados: si el total vivo se separa del
   aceptado, es que hay una decisión pendiente, y las instrucciones Zelle se congelan
@@ -362,6 +396,11 @@ schedules. Al revés habría que reescribirlos y migrar pedidos reales. Ver
       ventana. Idempotente — se puede correr dos veces sin descuadrar nada.
 - [ ] Admin mínimo: ajustar stock con motivo, anunciar y resolver una reposición,
       programar un precio. El histórico rico y el panel de fiabilidad son Etapa 8.
+- [ ] `suppliers.reservation_hold_hours` en la ficha del proveedor, vacío por
+      defecto (= las 72 h de la plataforma). Debajo, lo único que hay que decirle:
+      por debajo del suelo del medio de pago más lento habilitado, sus productos se
+      pueden reservar pero no llegar a pagar. No se prohíbe, se avisa — es su
+      mercancía y él sabrá.
 - [ ] **La suplantación, entera, entra aquí** — no en la Etapa 10. El portal es que
       el proveedor entre por su cuenta; esto es que tú puedas actuar por él, y lo
       necesitas desde el primer día porque en la Fase 1 el inventario ajeno lo
@@ -405,8 +444,21 @@ schedules. Al revés habría que reescribirlos y migrar pedidos reales. Ver
 - [ ] El stock no se comprueba, se **reserva**: `UPDATE products SET reserved =
       reserved + n WHERE id = ? AND stock − reserved >= n`. Cero filas devueltas
       significa que no había, y es atómico en una sola sentencia — sin lock abierto
-      entre dos viajes a la base. La reserva nace con `expires_at` a la ventana del
-      Zelle (~72 h) y cuelga de su `order_suppliers`.
+      entre dos viajes a la base. La reserva nace con su `expires_at` ya calculado
+      —`reservation_hold_hours` del proveedor, o las 72 h de la plataforma— y cuelga
+      de su `order_suppliers`.
+- [ ] `orders.expires_at` = la más temprana de las reservas vivas del pedido, y
+      `confirmation_due_at` de cada parte = `min(24 h, el hold de su proveedor)`:
+      no tiene sentido retener tres días para alguien que aún no ha dicho que sí.
+      Se recalcula el mínimo cada vez que una parte se cae; puede alargarse, nunca
+      acortarse.
+      _Un carrito solo de servicios no reserva nada y el mínimo saldría vacío: ahí
+      manda el default de la plataforma. Es el caso que se olvida y deja un pedido
+      sin vencimiento._
+- [ ] El checkout **dice hasta cuándo aguanta antes de que el comprador confirme**,
+      no después: "reservado hasta el jueves 14 a las 18:00". Y si esa ventana no le
+      da para pagar por el medio disponible, se avisa ahí —con qué proveedor la
+      acorta— mientras todavía puede quitarlo del carrito.
 - [ ] **El driver de base de datos tiene que cambiar en esta etapa.** `lib/db/index.ts`
       usa `drizzle-orm/neon-http`, que es HTTP de un solo tiro: manda un lote de
       queries pero no deja leer, decidir en JS y escribir dentro de la misma
@@ -429,8 +481,12 @@ schedules. Al revés habría que reescribirlos y migrar pedidos reales. Ver
       a `orders.notes` para que el instalador sepa a qué va.
 - [ ] Página "Mis órdenes" en la cuenta del usuario, con los tres ejes en tiempo
       real: el pago para el pedido, y la aceptación y la entrega para cada
-      proveedor. El marcador "2 de 3 confirmados" va arriba: es lo que el comprador
-      mira mientras espera, y no saberlo es lo que le hace escribir para preguntar.
+      proveedor. El marcador "2 de 3 confirmados" va arriba, y al lado la cuenta
+      atrás del pedido: es lo que el comprador mira mientras espera, y no saberlo es
+      lo que le hace escribir para preguntar.
+- [ ] En el detalle, **qué se vence y cuándo**: cada parte con su propia fecha de
+      reserva, para que se vea cuál es la que aprieta. Un pedido que caduca sin
+      avisar de quién lo estaba frenando es el que genera la llamada.
 
 ### Etapa 7 — Pago manual Zelle (2 días) ★ meta de la fase
 - [ ] Página de instrucciones de pago post-checkout: datos Zelle de la cuenta central, monto, número de orden como referencia.
@@ -454,6 +510,15 @@ schedules. Al revés habría que reescribirlos y migrar pedidos reales. Ver
       no puede confirmar nada. Al seguir se guarda el total nuevo y se reemiten.
       El admin puede tomarla en nombre del comprador (suplantación), que es como se
       va a resolver la mayoría por WhatsApp.
+- [ ] **El vencimiento del pedido en el cron**, que es el que cierra el círculo: al
+      llegar `orders.expires_at` se liberan todas sus reservas y el pedido se cancela.
+      Da igual en qué esperaba —a un proveedor callado, a un comprador que no decide,
+      a un Zelle que no llega—: los tres desagües acaban aquí, y por eso nada se queda
+      colgado indefinidamente. Un pedido ya `PAID` no vence: sus reservas están
+      consumidas y el reloj no le aplica.
+- [ ] Aviso antes de que se caiga, no después: recordatorio al comprador a falta de
+      ~24 h con lo que tiene pendiente (pagar, o decidir), y al proveedor que aún no
+      ha confirmado. Un pedido perdido por silencio se pierde dos veces.
 - [ ] Emails con Resend: orden creada (con instrucciones), parte confirmada o caída
       —con el total nuevo si cambió—, pago recibido/en revisión, pago confirmado,
       pago rechazado. Y al proveedor: "tienes una parte por confirmar", que es lo
@@ -815,6 +880,46 @@ mantener sincronizado. Mientras difieran, las instrucciones de pago se congelan 
 el admin no puede confirmar. Seguir con el resto, editar o cancelar son las tres
 salidas, y cualquiera de ellas reescribe el aceptado.
 
+### Paso 4b — Los relojes, que son uno solo
+
+Hay cuatro esperas en un pedido: que el proveedor confirme, que el stock siga
+retenido, que el comprador decida si alguien rechazó, y que pague. Modeladas como
+cuatro ajustes independientes se contradicen en cuanto alguien toca uno —el clásico
+"la reserva dura 48 h pero el plazo de pago son 72"—, y el que pierde es siempre el
+comprador, que se queda sin lo que ya creía suyo.
+
+Aquí hay **un** ajuste y todo lo demás se deriva de él:
+
+| Espera | De dónde sale |
+|---|---|
+| Retención del stock | `suppliers.reservation_hold_hours` (72 h si no dice nada) |
+| Confirmación del proveedor | `min(24 h, su propio hold)` |
+| Vencimiento del pedido | el **más temprano** de sus reservas vivas |
+| Decisión del comprador | el mismo vencimiento del pedido |
+| Plazo para pagar | el mismo vencimiento del pedido |
+
+Las tres últimas filas son el mismo instante escrito una vez (`orders.expires_at`).
+No es que se hayan cuadrado dos números: es que no hay dos.
+
+Que lo fije el proveedor no es una concesión, es lo correcto: retener mercancía le
+cuesta a él, no a la plataforma. Y que mande el más impaciente tampoco es un castigo
+— es que en cuanto vence uno el pedido ya no se puede completar entero, así que
+enseñar cualquier otra fecha sería mentir.
+
+De la derivada salen gratis dos comportamientos que habría que haber programado
+aparte. Si el proveedor impaciente es justo el que rechaza, su reserva se libera, el
+mínimo se recalcula sobre los que quedan y **el comprador gana tiempo para decidir**
+sin que nadie se lo conceda. Y como el valor se recalcula solo sobre lo vivo, nunca
+puede acortarse por sorpresa: solo lo mueve algo que ya se cayó.
+
+Lo que no se deriva y hay que escribir a mano es el suelo. Un hold de 12 h es
+perfectamente razonable para quien tiene dos paneles y gente entrando a la tienda,
+pero con Zelle manual —reportar, que mires el banco, confirmar— no da tiempo a
+completar la compra. Ese mínimo no lo decide la plataforma por gusto: es el tiempo
+que necesita la pasarela más lenta que esté habilitada, así que cuando entre QvaPay
+(Etapa 11) baja solo y sin tocar código. Y no se prohíbe configurar por debajo: se
+avisa al proveedor, y se avisa al comprador en el checkout antes de que se ilusione.
+
 ### Paso 5 — Actuar en nombre de otro
 
 Buena parte de este negocio se cierra por teléfono o WhatsApp, y después hay que
@@ -846,10 +951,14 @@ más tonto es olvidarse de que estás suplantando.
 - **La parte huérfana.** Una que nadie confirma y nadie rechaza es la que se lleva
   el pedido por delante. El plazo no es un adorno: es lo único que garantiza que
   toda parte llega a un final.
-- **El pedido esperando una decisión que nadie toma.** El comprador tampoco
-  contesta siempre. Necesita su propio recordatorio y su propio vencimiento, o
-  cambiamos una parte colgada por un pedido colgado —con su stock reservado igual
-  de muerto—.
+- **El pedido esperando una decisión que nadie toma.** Resuelto por el mismo
+  `expires_at`: el comprador que no contesta y el que no paga acaban en el mismo
+  desagüe. Lo que queda por vigilar no es el modelo sino el aviso — que el
+  recordatorio salga a tiempo, porque cancelar en silencio se siente como un fallo
+  aunque sea la regla.
+- **Relojes que se separan.** El día que alguien añada un plazo nuevo "solo para
+  este caso", esto vuelve a estar roto. Toda espera nueva se deriva de
+  `orders.expires_at` o cambia la derivada; ninguna se declara al lado.
 - **La suplantación olvidada.** Un admin que se deja la sesión abierta actuando
   como otro escribe cosas a su nombre sin darse cuenta. Caducidad y banner.
 - **Doble contabilidad.** `stock`/movimientos y `price_usd`/schedules son dos pares
