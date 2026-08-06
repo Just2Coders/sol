@@ -30,6 +30,7 @@ import { sumItemsUsd, type KitItemDetail } from "@/lib/kits/queries";
 import type { EquipmentScope } from "@/lib/services/enums";
 import {
   CATALOG_PAGE_SIZE,
+  type CatalogCounts,
   type CatalogFilters,
   type CatalogSort,
   type CatalogType,
@@ -78,9 +79,9 @@ export type CatalogResult = {
   items: CatalogItem[];
   /**
    * Conteos del ámbito (zona + proveedor + precio) **ignorando** el filtro de
-   * tipo: son los números que muestra el selector Todo · Kits · Productos.
+   * tipo: son los números del selector Todo · Kits · Productos · Instalación.
    */
-  counts: { all: number; KIT: number; PRODUCT: number };
+  counts: CatalogCounts;
   /** Proveedores que operan en la zona elegida — alimenta el selector. */
   suppliers: CatalogSupplier[];
   /** La zona resuelta, o `null` si el catálogo se ve sin filtro de zona. */
@@ -193,7 +194,7 @@ function scopeConditions(
 // ─── Listado ─────────────────────────────────────────────────────────────────
 
 function priceConditions(
-  column: typeof products.priceUsd | typeof kits.priceUsd,
+  column: typeof products.priceUsd | typeof kits.priceUsd | typeof services.priceUsd,
   filters: CatalogFilters,
 ): SQL[] {
   const conditions: SQL[] = [];
@@ -216,17 +217,29 @@ function kitSummary(components: number, pieces: number): string | null {
   return `${left} · ${pieces} ${pieces === 1 ? "pieza" : "piezas"}`;
 }
 
+// "Paneles · por panel": de qué trabajo es y cómo se cobra, que es lo que
+// distingue a una instalación de otra en una grilla donde todo lo demás es
+// equipo.
+function serviceSummary(
+  categoryName: string | null,
+  unitLabel: string | null,
+): string | null {
+  const how = unitLabel ? `por ${unitLabel}` : "precio cerrado";
+  return categoryName ? `${categoryName} · ${how}` : how;
+}
+
 /**
- * La fila que devuelven las dos ramas del listado.
+ * La fila que devuelven las tres ramas del listado.
  *
- * Kits y productos se leen con la **misma** forma para poder unirlos en SQL
- * (`UNION ALL`) y que sea Postgres quien ordene, corte y pagine. Las columnas
- * que solo tiene un lado viajan neutras en el otro: un kit nunca tiene `specs`
- * y un producto nunca tiene piezas.
+ * Kits, productos y servicios se leen con la **misma** forma para poder unirlos
+ * en SQL (`UNION ALL`) y que sea Postgres quien ordene, corte y pagine. Las
+ * columnas que solo tiene una rama viajan neutras en las otras: un kit nunca
+ * tiene `specs`, un producto nunca tiene piezas y solo un servicio tiene unidad
+ * de obra.
  */
 type CatalogRow = {
   type: CatalogType;
-  /** 0 = kit, 1 = producto. Es la primera clave del orden "sugerido". */
+  /** 0 = kit, 1 = producto, 2 = servicio. Primera clave del orden "sugerido". */
   rank: number;
   id: string;
   slug: string;
@@ -240,6 +253,9 @@ type CatalogRow = {
   componentCount: number;
   pieceCount: number;
   stock: number;
+  /** Solo servicios: de qué trabajo es y cómo se cobra. `null` en el resto. */
+  categoryName: string | null;
+  unitLabel: string | null;
 };
 
 /**
@@ -273,6 +289,8 @@ function kitQuery(filters: CatalogFilters, zone: ResolvedZone | null) {
       ),
       // Un kit nunca se marca sin stock; la columna existe para cuadrar la unión.
       stock: sql<number>`1`.as("stock"),
+      categoryName: sql<string | null>`null`.as("category_name"),
+      unitLabel: sql<string | null>`null`.as("unit_label"),
     })
     .from(kits)
     .innerJoin(suppliers, eq(suppliers.id, kits.supplierId))
@@ -301,6 +319,8 @@ function productQuery(filters: CatalogFilters, zone: ResolvedZone | null) {
       componentCount: sql<number>`0`.as("component_count"),
       pieceCount: sql<number>`0`.as("piece_count"),
       stock: products.stock,
+      categoryName: sql<string | null>`null`.as("category_name"),
+      unitLabel: sql<string | null>`null`.as("unit_label"),
     })
     .from(products)
     .innerJoin(suppliers, eq(suppliers.id, products.supplierId))
@@ -309,6 +329,52 @@ function productQuery(filters: CatalogFilters, zone: ResolvedZone | null) {
         eq(products.active, true),
         ...scopeConditions(zone, filters.supplier),
         ...priceConditions(products.priceUsd, filters),
+      ),
+    );
+}
+
+/**
+ * La tercera rama: la instalación que se contrata sola.
+ *
+ * **Solo entran los `ANY`**, y es la única diferencia real entre `ANY` y
+ * `PLATFORM`: los dos aceptan equipo ajeno, pero solo el primero se puede
+ * contratar sin que la plataforma sepa sobre qué equipo va. Anunciar en la
+ * grilla un servicio que necesita traer su equipo sería mandar a la gente a una
+ * ficha que no le va a vender nada — la misma regla que aplica
+ * `ServicePurchaseBlock`, aquí un paso antes.
+ *
+ * La categoría se une porque es lo que distingue a una instalación de otra en
+ * una tarjeta donde todo lo demás es equipo; es un join por FK indexada.
+ */
+function serviceQuery(filters: CatalogFilters, zone: ResolvedZone | null) {
+  return db
+    .select({
+      type: sql<CatalogType>`'SERVICE'`.as("type"),
+      rank: sql<number>`2`.as("rank"),
+      id: services.id,
+      slug: services.slug,
+      name: services.name,
+      sortName: sql<string>`lower(${services.name})`.as("sort_name"),
+      priceUsd: services.priceUsd,
+      image: sql<string | null>`${services.images}[1]`.as("image"),
+      supplierName: sql<string>`${suppliers.name}`.as("supplier_name"),
+      specs: sql<Record<string, string>>`'{}'::jsonb`.as("specs"),
+      componentCount: sql<number>`0`.as("component_count"),
+      pieceCount: sql<number>`0`.as("piece_count"),
+      // La mano de obra no se agota en un almacén.
+      stock: sql<number>`1`.as("stock"),
+      categoryName: sql<string | null>`${serviceCategories.name}`.as("category_name"),
+      unitLabel: services.unitLabel,
+    })
+    .from(services)
+    .innerJoin(suppliers, eq(suppliers.id, services.supplierId))
+    .innerJoin(serviceCategories, eq(serviceCategories.id, services.categoryId))
+    .where(
+      and(
+        eq(services.active, true),
+        eq(services.equipmentScope, "ANY"),
+        ...scopeConditions(zone, filters.supplier),
+        ...priceConditions(services.priceUsd, filters),
       ),
     );
 }
@@ -328,8 +394,9 @@ function orderClauses(sort: CatalogSort): SQL[] {
       return [sql`price_usd asc`, sql`sort_name asc`];
     case "price-desc":
       return [sql`price_usd desc`, sql`sort_name asc`];
-    // Sugerido: los kits primero — es lo que la casa compra — y dentro de cada
-    // grupo, del más barato al más caro.
+    // Sugerido: los kits primero —es lo que la casa compra—, luego los productos
+    // y al final la mano de obra, que casi nunca es lo que se venía a buscar.
+    // Dentro de cada grupo, del más barato al más caro.
     case "suggested":
       return [sql`rank asc`, sql`price_usd asc`, sql`sort_name asc`];
   }
@@ -363,7 +430,18 @@ async function listItems(
       .offset(offset);
   }
 
-  return unionAll(kitQuery(filters, zone), productQuery(filters, zone))
+  if (filters.type === "SERVICE") {
+    return serviceQuery(filters, zone)
+      .orderBy(...order)
+      .limit(CATALOG_PAGE_SIZE)
+      .offset(offset);
+  }
+
+  return unionAll(
+    kitQuery(filters, zone),
+    productQuery(filters, zone),
+    serviceQuery(filters, zone),
+  )
     .orderBy(...order)
     .limit(CATALOG_PAGE_SIZE)
     .offset(offset);
@@ -406,6 +484,25 @@ async function countProducts(
   return row?.n ?? 0;
 }
 
+async function countServices(
+  filters: CatalogFilters,
+  zone: ResolvedZone | null,
+): Promise<number> {
+  const [row] = await db
+    .select({ n: count() })
+    .from(services)
+    .innerJoin(suppliers, eq(suppliers.id, services.supplierId))
+    .where(
+      and(
+        eq(services.active, true),
+        eq(services.equipmentScope, "ANY"),
+        ...scopeConditions(zone, filters.supplier),
+        ...priceConditions(services.priceUsd, filters),
+      ),
+    );
+  return row?.n ?? 0;
+}
+
 function toItem(row: CatalogRow): CatalogItem {
   return {
     type: row.type,
@@ -418,7 +515,11 @@ function toItem(row: CatalogRow): CatalogItem {
     summary:
       row.type === "KIT"
         ? kitSummary(row.componentCount, row.pieceCount)
-        : specsSummary(row.specs),
+        : row.type === "SERVICE"
+          ? serviceSummary(row.categoryName, row.unitLabel)
+          : specsSummary(row.specs),
+    // Ni un kit ni un servicio se agotan: el kit se arma con lo que haya y la
+    // mano de obra no vive en un almacén.
     outOfStock: row.type === "PRODUCT" && row.stock === 0,
   };
 }
@@ -438,7 +539,7 @@ export async function getCatalog(
   const zone = filters.zone ? await resolveZone(filters.zone) : null;
   const empty: CatalogResult = {
     items: [],
-    counts: { all: 0, KIT: 0, PRODUCT: 0 },
+    counts: { all: 0, KIT: 0, PRODUCT: 0, SERVICE: 0 },
     suppliers: [],
     zone: zone && { slug: zone.slug, name: zone.name },
     unknownZone: filters.zone !== null && zone === null,
@@ -447,17 +548,19 @@ export async function getCatalog(
   };
   if (empty.unknownZone) return empty;
 
-  const [scope, kitCount, productCount, rows] = await Promise.all([
+  const [scope, kitCount, productCount, serviceCount, rows] = await Promise.all([
     getSuppliersInScope(zone),
     countKits(filters, zone),
     countProducts(filters, zone),
+    countServices(filters, zone),
     listItems(filters, zone),
   ]);
 
-  const counts = {
-    all: kitCount + productCount,
+  const counts: CatalogCounts = {
+    all: kitCount + productCount + serviceCount,
     KIT: kitCount,
     PRODUCT: productCount,
+    SERVICE: serviceCount,
   };
   const total = filters.type ? counts[filters.type] : counts.all;
 

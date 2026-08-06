@@ -10,20 +10,32 @@ import * as z from "zod";
  * `next/headers`, por eso lo pueden importar cliente y servidor.
  */
 
-/** Lo que el listado sabe filtrar: un kit armado o un producto suelto. */
-export const CATALOG_TYPES = ["KIT", "PRODUCT"] as const;
+/**
+ * Lo que el listado sabe filtrar: un kit armado, un producto suelto o una
+ * instalación que se contrata sola.
+ *
+ * De los servicios **solo entran los `ANY`**: son los únicos que se pueden
+ * contratar sin traer el equipo, así que son los únicos a los que tiene sentido
+ * llegar desde una grilla. Los otros dos siguen teniendo ficha —la enlazan las
+ * fichas de los equipos— pero no se anuncian sueltos. Ver PLAN.md, Etapa 5.
+ */
+export const CATALOG_TYPES = ["KIT", "PRODUCT", "SERVICE"] as const;
 export type CatalogType = (typeof CATALOG_TYPES)[number];
 
 /**
- * Todo lo que se puede comprar, servicios incluidos.
+ * Todo lo que puede ser una línea de carrito.
  *
- * Es un conjunto más ancho que `CATALOG_TYPES` a propósito: el filtro del
- * listado solo ofrece kits y productos —los servicios todavía no se listan, ver
- * PLAN.md Etapa 5— pero una instalación sí puede estar en el carrito y en una
- * orden, porque se contrata desde la ficha del equipo que instala.
+ * Hoy coincide exactamente con `CATALOG_TYPES`, pero los dos nombres siguen
+ * separados porque responden a preguntas distintas: uno es *qué se lista* y el
+ * otro *qué se compra*. Coincidieron al entrar los servicios a la grilla, y
+ * volverán a separarse en cuanto algo se pueda comprar sin salir en el listado
+ * —o al revés—.
  */
-export const PURCHASABLE_TYPES = [...CATALOG_TYPES, "SERVICE"] as const;
+export const PURCHASABLE_TYPES = CATALOG_TYPES;
 export type PurchasableType = (typeof PURCHASABLE_TYPES)[number];
+
+/** Los conteos que alimentan el selector: uno por tipo más el total. */
+export type CatalogCounts = { all: number } & Record<CatalogType, number>;
 
 export const CATALOG_SORTS = ["suggested", "price-asc", "price-desc"] as const;
 export type CatalogSort = (typeof CATALOG_SORTS)[number];
