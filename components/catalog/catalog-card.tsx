@@ -61,13 +61,12 @@ export function CatalogCard({ item }: { item: CatalogItem }) {
         </div>
 
         {/* El pie: qué es y quién lo vende, con la ficha entera ya cerrada
-            arriba en tinta. El icono del tipo lleva el único toque de
-            `--primary` de la card — sutil, solo para distinguir kit de
-            producto de un vistazo. */}
+            arriba en tinta. Los dos iconos van del mismo tono muted que el
+            texto — el `--primary` de la card ya lo lleva "Ver {kind}". */}
         <div className="border-border mt-auto flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-t px-5 py-3.5">
           <div className="text-marginalia tracking-mono-sm text-muted-foreground flex items-center gap-4 font-mono uppercase">
             <span className="inline-flex items-center gap-1.5">
-              <KindIcon aria-hidden className="text-primary size-4" />
+              <KindIcon aria-hidden className="size-4" />
               {kind}
             </span>
             <span className="inline-flex items-center gap-1.5">

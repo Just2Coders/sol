@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { CalendarDate, Shop, Text } from "reicon-react";
 
 import {
   CatalogDetailAccordion,
@@ -8,13 +7,10 @@ import {
 } from "@/components/catalog/detail/detail-accordion";
 import { CatalogDetailHead } from "@/components/catalog/detail/detail-head";
 import { CatalogDetailShell } from "@/components/catalog/detail/detail-shell";
-import {
-  CatalogSupplierBlock,
-  CatalogSupplierCoverage,
-} from "@/components/catalog/detail/supplier-block";
-import { CatalogSupplierRelated } from "@/components/catalog/detail/supplier-related";
+import { CatalogSupplierReach } from "@/components/catalog/detail/supplier-block";
+// import { CatalogSupplierRelated } from "@/components/catalog/detail/supplier-related";
 import { itemPhotos } from "@/lib/catalog/photos";
-import { getCatalogService, getSupplierRelated } from "@/lib/catalog/queries";
+import { getCatalogService } from "@/lib/catalog/queries";
 
 type ServicePageProps = { params: Promise<{ slug: string }> };
 
@@ -55,20 +51,12 @@ export default async function ServicePage({ params }: ServicePageProps) {
   const service = await getCatalogService((await params).slug);
   if (!service) notFound();
 
-  // El equipo que este instalador vende. Un servicio nunca se excluye a sí
-  // mismo de la tira porque la tira solo lleva kits y productos.
-  const related = await getSupplierRelated(service.supplier.slug, {
-    type: "SERVICE",
-    slug: service.slug,
-  });
-
   const photos = itemPhotos(service.images, service.name);
 
   return (
     <CatalogDetailShell
       photos={photos}
       fallbackAlt={service.name}
-      footer={<CatalogSupplierCoverage supplier={service.supplier} />}
       head={
         <CatalogDetailHead
           kind={`instalación · ${service.categoryName.toLowerCase()}`}
@@ -103,41 +91,30 @@ export default async function ServicePage({ params }: ServicePageProps) {
           visita. Un valor sin fila se ignora solo. */}
       <CatalogDetailAccordion defaultOpen={["description", "visit"]}>
         {service.description && (
-          <CatalogDetailAccordionRow
-            value="description"
-            label="descripción"
-            icon={Text}
-          >
+          <CatalogDetailAccordionRow value="description" label="Descripción">
             <p className="text-muted-foreground text-body max-w-[60ch]">
               {service.description}
             </p>
           </CatalogDetailAccordionRow>
         )}
 
-        <CatalogDetailAccordionRow
-          value="visit"
-          label="la visita"
-          icon={CalendarDate}
-        >
+        <CatalogDetailAccordionRow value="visit" label="La visita">
           <p className="text-muted-foreground text-body-sm max-w-[60ch]">
             La fecha se coordina contigo después del pago. El trabajo lo hace{" "}
             {service.supplier.name}, dentro de las zonas donde opera.
           </p>
         </CatalogDetailAccordionRow>
 
-        <CatalogDetailAccordionRow
-          value="supplier"
-          label="proveedor"
-          icon={Shop}
-        >
-          <CatalogSupplierBlock supplier={service.supplier} />
+        <CatalogDetailAccordionRow value="scope" label="Alcance">
+          <CatalogSupplierReach supplier={service.supplier} />
         </CatalogDetailAccordionRow>
       </CatalogDetailAccordion>
 
-      <CatalogSupplierRelated
+      {/* Desactivada hasta mejorar su diseño — ver CatalogSupplierRelated. */}
+      {/* <CatalogSupplierRelated
         items={related}
         supplierName={service.supplier.name}
-      />
+      /> */}
     </CatalogDetailShell>
   );
 }

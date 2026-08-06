@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { List, Shop, Text } from "reicon-react";
 
 import { CatalogInstallations } from "@/components/catalog/catalog-installations";
 import {
@@ -10,13 +9,10 @@ import {
 import { CatalogDetailHead } from "@/components/catalog/detail/detail-head";
 import { CatalogDetailRow } from "@/components/catalog/detail/detail-row";
 import { CatalogDetailShell } from "@/components/catalog/detail/detail-shell";
-import {
-  CatalogSupplierBlock,
-  CatalogSupplierCoverage,
-} from "@/components/catalog/detail/supplier-block";
-import { CatalogSupplierRelated } from "@/components/catalog/detail/supplier-related";
+import { CatalogSupplierReach } from "@/components/catalog/detail/supplier-block";
+// import { CatalogSupplierRelated } from "@/components/catalog/detail/supplier-related";
 import { itemPhotos } from "@/lib/catalog/photos";
-import { getCatalogProduct, getSupplierRelated } from "@/lib/catalog/queries";
+import { getCatalogProduct } from "@/lib/catalog/queries";
 
 type ProductPageProps = { params: Promise<{ slug: string }> };
 
@@ -52,13 +48,6 @@ export default async function ProductPage({ params }: ProductPageProps) {
   const product = await getCatalogProduct((await params).slug);
   if (!product) notFound();
 
-  // Lo demás del proveedor. Necesita su slug, así que va detrás de la ficha;
-  // es una sola lectura corta y ya cacheada.
-  const related = await getSupplierRelated(product.supplier.slug, {
-    type: "PRODUCT",
-    slug: product.slug,
-  });
-
   const specs = Object.entries(product.specs);
   const photos = itemPhotos(product.images, product.name);
 
@@ -66,7 +55,6 @@ export default async function ProductPage({ params }: ProductPageProps) {
     <CatalogDetailShell
       photos={photos}
       fallbackAlt={product.name}
-      footer={<CatalogSupplierCoverage supplier={product.supplier} />}
       head={
         <CatalogDetailHead
           kind="producto"
@@ -84,6 +72,12 @@ export default async function ProductPage({ params }: ProductPageProps) {
             supplierName: product.supplier.name,
             stock: product.stock,
           }}
+          installations={
+            <CatalogInstallations
+              installations={product.installations}
+              supplier={product.supplier}
+            />
+          }
         />
       }
     >
@@ -91,28 +85,15 @@ export default async function ProductPage({ params }: ProductPageProps) {
           tenga fila —un producto sin descripción— se ignora solo. */}
       <CatalogDetailAccordion defaultOpen={["description", "specs"]}>
         {product.description && (
-          <CatalogDetailAccordionRow
-            value="description"
-            label="descripción"
-            icon={Text}
-          >
+          <CatalogDetailAccordionRow value="description" label="Descripción">
             <p className="text-muted-foreground text-body max-w-[60ch]">
               {product.description}
             </p>
           </CatalogDetailAccordionRow>
         )}
 
-        <CatalogInstallations
-          installations={product.installations}
-          supplier={product.supplier}
-        />
-
         {specs.length > 0 && (
-          <CatalogDetailAccordionRow
-            value="specs"
-            label="ficha técnica"
-            icon={List}
-          >
+          <CatalogDetailAccordionRow value="specs" label="Ficha técnica">
             <dl className="border-border border-t">
               {specs.map(([key, value], index) => (
                 <CatalogDetailRow
@@ -126,19 +107,16 @@ export default async function ProductPage({ params }: ProductPageProps) {
           </CatalogDetailAccordionRow>
         )}
 
-        <CatalogDetailAccordionRow
-          value="supplier"
-          label="proveedor"
-          icon={Shop}
-        >
-          <CatalogSupplierBlock supplier={product.supplier} />
+        <CatalogDetailAccordionRow value="scope" label="Alcance">
+          <CatalogSupplierReach supplier={product.supplier} />
         </CatalogDetailAccordionRow>
       </CatalogDetailAccordion>
 
-      <CatalogSupplierRelated
+      {/* Desactivada hasta mejorar su diseño — ver CatalogSupplierRelated. */}
+      {/* <CatalogSupplierRelated
         items={related}
         supplierName={product.supplier.name}
-      />
+      /> */}
     </CatalogDetailShell>
   );
 }

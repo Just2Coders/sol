@@ -24,6 +24,11 @@ import { formatUsd } from "@/lib/utils";
  *   la cifra los parte en tres.
  * - Nada lleva rótulo. Un nombre propio y un precio no necesitan que se les
  *   anuncie.
+ *
+ * `installations` (`CatalogInstallations`) cuelga justo debajo del botón de
+ * compra y no en el acordeón: contratar la mano de obra es una decisión que
+ * se toma en el mismo momento que comprar el equipo, así que tiene que estar
+ * a la vista sin abrir nada.
  */
 export function CatalogDetailHead({
   kind,
@@ -34,6 +39,7 @@ export function CatalogDetailHead({
   savingsUsd,
   item,
   note,
+  installations,
 }: {
   /** Qué es, en minúscula mono: "kit", "producto", "instalación · paneles". */
   kind: string;
@@ -48,16 +54,18 @@ export function CatalogDetailHead({
   item: CartItem;
   /** Aclaración propia del tipo: cómo se cobra un servicio, por ejemplo. */
   note?: React.ReactNode;
+  /** La instalación que se puede contratar junto al equipo; `CatalogInstallations`. */
+  installations?: React.ReactNode;
 }) {
   return (
     <div className="lg:px-gutter px-6 pt-6 pb-9 lg:pt-8 lg:pb-12">
-      <p className="text-muted-foreground text-marginalia font-mono">
-        {kind} · {supplierName}
-      </p>
-
-      <h1 className="text-foreground text-display-4 mt-3 max-w-[28ch] text-balance">
+      <h1 className="text-foreground text-display-4 max-w-[28ch] text-balance">
         {name}
       </h1>
+
+      <p className="text-muted-foreground text-marginalia mt-2 font-mono">
+        {kind} · {supplierName}
+      </p>
 
       <div className="mt-5 flex flex-wrap items-baseline gap-x-4 gap-y-2">
         <p className="text-foreground text-heading-1">
@@ -81,6 +89,8 @@ export function CatalogDetailHead({
       <div className="mt-7">
         <CatalogPurchaseBlock item={item} note={note} />
       </div>
+
+      {installations}
     </div>
   );
 }

@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import { Bricolage_Grotesque, Space_Mono } from "next/font/google";
+
+import { TooltipProvider } from "@/components/ui/tooltip";
 import "./globals.css";
 
 // Display y cuerpo. Los pesos son los que usa la escala tipográfica del sistema.
@@ -52,7 +54,7 @@ export default function RootLayout({
           atributos de este elemento —un nivel, no el árbol— así que cualquier
           descuadre real de dentro se sigue viendo. */}
       <body suppressHydrationWarning className="min-h-full flex flex-col">
-        {children}
+        <TooltipProvider>{children}</TooltipProvider>
       </body>
     </html>
   );
