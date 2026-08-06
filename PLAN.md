@@ -43,16 +43,28 @@ installation_offers service_id, target_type (PRODUCT | KIT), target_id
                                                    ← qué instalación se ofrece con qué item;
                                                      cruza de proveedor si el servicio no es OWN
 orders         id, order_number, user_id, zone_id, status, subtotal, total,
+                                                   ← `total` es lo que se pidió: inmutable.
+                                                     Lo que se paga hoy se suma de las partes
+                                                     vivas; no se guarda ni se reescribe
                acknowledged_total,                 ← la última cifra que el comprador aceptó
-               expires_at,                         ← la más temprana de sus reservas vivas
+               expires_at,                         ← la más temprana de sus reservas vivas;
+                                                     al llegar cae esa parte, no el pedido
                created_at
 order_suppliers id, order_id, supplier_id, subtotal, confirmation_due_at,
                 confirmed_at, resolved_at, decline_reason,
-                status (PENDING | CONFIRMED | DELIVERED | DECLINED | CANCELLED)
+                status (PENDING | CONFIRMED | DELIVERED |
+                        DECLINED | EXPIRED | CANCELLED)
                                                    ← la parte del pedido de cada proveedor:
-                                                     la acepta, la entrega y se liquida sola
+                                                     la acepta, la entrega y se liquida sola.
+                                                     Se cae de tres formas y cada una tiene su
+                                                     actor: el proveedor, el reloj, una persona.
+                                                     En `EXPIRED`, `confirmed_at` distingue
+                                                     "no contestó" de "aceptó y se le venció"
 order_items    id, order_supplier_id, item_type (PRODUCT | KIT | SERVICE), item_id,
-               name_snapshot, price_snapshot, quantity
+               name_snapshot, price_snapshot, quantity, confirmed_quantity?
+                                                   ← `quantity` es lo que se pidió y no cambia;
+                                                     `confirmed_quantity` lo que el proveedor
+                                                     sí puede (null mientras no conteste)
 payments       id, order_id, method (ZELLE | QVAPAY | SUBY), status, reference,
                receipt_url, reported_at, confirmed_at, confirmed_by
 stock_movements     id, product_id, delta, reason (OPENING | RESTOCK | SALE | RELEASE |
@@ -188,12 +200,29 @@ Decisiones clave:
   dinero a quien lo tiene —es mercancía que no le vende al que entra por la puerta—,
   así que cuánto aguanta reservado lo suyo lo decide él (`reservation_hold_hours`,
   72 h por defecto). Pero un pedido con tres proveedores tendría tres vencimientos, y
-  eso no se le puede enseñar a nadie: lo que vale es **el más temprano**, porque en
-  cuanto caduca uno el pedido ya no se puede completar entero. `orders.expires_at`
-  es esa derivada, y es el único número que ve el comprador.
+  eso no se le puede enseñar a nadie: lo que vale es **el más temprano**, que es lo
+  próximo que le va a pasar al pedido. `orders.expires_at` es esa derivada, y es el
+  único número que ve el comprador.
   _Y por eso el plazo del comprador para pagar **no es un ajuste aparte**: es ese
   mismo instante. Dos relojes distintos tarde o temprano se contradicen; aquí no
   hay dos._
+- **Que venza una reserva tumba esa parte, no el pedido.** Al llegar `expires_at`
+  cae la parte cuya reserva era, se libera su stock, y el mínimo **se recalcula
+  sobre las que quedan**: el pedido sigue vivo con una fecha nueva, más lejana. Solo
+  muere cuando no le queda ninguna parte viva o cuando el comprador lo cancela.
+  _Un pedido no se cancela solo por llegar a una fecha; se cancela por quedarse sin
+  nada que entregar, que no es lo mismo._
+- **Caducar es un desenlace más, y sale por la misma puerta que un rechazo.** Para
+  quien compra da igual si el proveedor dijo que no o si se le acabó el tiempo: en
+  los dos casos falta algo de lo que pidió, y en los dos decide él —seguir con el
+  resto, editar o abandonar—. Un vencimiento **nunca** recorta el pedido por su
+  cuenta ni lo cancela en silencio.
+- **Tres formas de caerse, y cada una tiene un actor distinto.** `DECLINED` lo dijo
+  el proveedor (con motivo), `EXPIRED` lo dijo el reloj, `CANCELLED` lo dijo una
+  persona —el comprador al editar, o el admin—. Y dentro de `EXPIRED`, si llegó a
+  aceptar antes de caerse ya está escrito en `confirmed_at`: no hace falta un estado
+  más para distinguir "no contestó nunca" de "aceptó y luego se le venció la
+  reserva", que son las dos cosas que el comprador necesita leer distintas.
 - **El vencimiento se escribe al reservar y ya no se mueve.** `expires_at` es
   absoluto, calculado con el `reservation_hold_hours` que el proveedor tenía en ese
   momento — mismo criterio que el snapshot de precio de `order_items`. Si mañana
@@ -206,11 +235,26 @@ Decisiones clave:
   mínimo no es una regla arbitraria: es el tiempo que necesita la pasarela más lenta
   que esté habilitada. Con QvaPay (Etapa 11) el pago es inmediato y ese suelo baja
   solo, sin tocar nada.
-- **Una parte que se cae puede alargar el pedido, no acortarlo.** Como
-  `expires_at` es el mínimo de las reservas **vivas**, si el proveedor impaciente es
-  justo el que rechaza, su reserva se libera y el mínimo se recalcula sobre los que
-  quedan — el comprador gana tiempo para decidir sin que nadie se lo regale. Lo que
-  **no** hay en la Fase 1 es prórroga: nadie retiene más de lo que dijo.
+- **Una parte que se cae alarga el pedido, nunca lo acorta.** Como `expires_at` es
+  el mínimo de las reservas **vivas**, en cuanto una se va el mínimo se recalcula
+  sobre las que quedan — el comprador gana tiempo para decidir sin que nadie se lo
+  regale, y sin que ningún proveedor retenga más de lo que dijo. Lo que **no** hay
+  en la Fase 1 es prórroga.
+- **Nada se borra, nada se reescribe: el pedido se enseña entero.** El comprador ve
+  siempre lo que pidió —todas sus líneas, con lo que pasó con cada una— y no una
+  versión recortada a sus espaldas. Por eso `orders.total` es **inmutable**: es lo
+  que pidió, y sigue siendo verdad aunque ya no sea lo que va a pagar. Lo que se
+  paga hoy es la suma de las partes vivas, que se calcula; y lo que aceptó pagar
+  está en `acknowledged_total`. Tres cifras que dicen tres cosas distintas, y
+  ninguna pisa a la otra.
+  _La regla de fondo: un pedido es el registro de lo que alguien pidió, no un
+  borrador que el sistema va limpiando. Si una línea no llegó a buen puerto, se
+  cuenta — no se hace desaparecer._
+- **Una parte puede confirmarse a medias, y también se ve.** Si el proveedor tiene
+  dos de los tres paneles, `order_items.confirmed_quantity` guarda lo que sí puede
+  y `quantity` sigue diciendo lo que se pidió. Es la misma disciplina una capa más
+  abajo, y entra por la misma puerta: cambia lo que se pagaría, así que decide el
+  comprador.
 - **Lo que el comprador aceptó pagar se guarda** (`orders.acknowledged_total_usd`).
   De ahí sale todo lo demás sin inventar estados: si el total vivo se separa del
   aceptado, es que hay una decisión pendiente, y las instrucciones Zelle se congelan
@@ -245,10 +289,12 @@ Decisiones clave:
    teléfono en su nombre). El comprador ve el marcador en su pedido —"2 de 3
    confirmados"—, no una caja negra. La parte que no se confirme dentro de su plazo
    se cae sola y libera su reserva; las demás siguen.
-4b. Si alguna se cayó, **el pedido se para y pregunta**: quién no pudo, por qué, y
-   cuánto quedaría. El comprador sigue con el resto, edita o cancela — y hasta que
-   conteste no se le pide dinero. Al seguir, se guarda el nuevo total aceptado y se
-   reemiten las instrucciones con esa cifra.
+4b. Si alguna se cayó —porque la rechazaron o porque venció, que para el comprador
+   es lo mismo—, **el pedido se para y pregunta**. Se le enseña su pedido original
+   entero, con lo que pasó con cada línea escrito al lado, y debajo lo que queda y
+   lo que costaría. Sigue con el resto, edita o abandona; hasta que conteste no se
+   le pide dinero. Al seguir se guarda el nuevo total aceptado y se reemiten las
+   instrucciones con esa cifra. Nada se recorta ni desaparece de la lista.
 5. Usuario reporta el pago: número de referencia Zelle + captura del comprobante (opcional).
    La orden pasa a `PAYMENT_REPORTED`.
 6. Tú verificas el Zelle en tu banco y desde el panel admin confirmas o rechazas.
@@ -484,9 +530,11 @@ schedules. Al revés habría que reescribirlos y migrar pedidos reales. Ver
       proveedor. El marcador "2 de 3 confirmados" va arriba, y al lado la cuenta
       atrás del pedido: es lo que el comprador mira mientras espera, y no saberlo es
       lo que le hace escribir para preguntar.
-- [ ] En el detalle, **qué se vence y cuándo**: cada parte con su propia fecha de
-      reserva, para que se vea cuál es la que aprieta. Un pedido que caduca sin
-      avisar de quién lo estaba frenando es el que genera la llamada.
+- [ ] En el detalle, **el pedido original completo y qué pasó con cada línea**: la
+      que sigue en pie con su fecha de reserva —para que se vea cuál aprieta—, y la
+      que se cayó con el motivo escrito y sin desaparecer de la lista. Un pedido que
+      se recorta solo, o que caduca sin decir quién lo frenaba, es el que genera la
+      llamada.
 
 ### Etapa 7 — Pago manual Zelle (2 días) ★ meta de la fase
 - [ ] Página de instrucciones de pago post-checkout: datos Zelle de la cuenta central, monto, número de orden como referencia.
@@ -500,22 +548,24 @@ schedules. Al revés habría que reescribirlos y migrar pedidos reales. Ver
 - [ ] La puerta: confirmar el pago exige que ninguna parte viva siga en `PENDING`.
       La cola de pagos lo enseña en la fila —"1 proveedor sin confirmar"— y la
       Action lo comprueba; no basta con esconder el botón.
-- [ ] Plazo de confirmación en el cron: la parte vencida pasa a `CANCELLED` y libera
-      su reserva. El pedido sin ninguna parte viva se cancela solo; con alguna viva,
-      pasa a esperar al comprador (siguiente item).
-- [ ] **La pantalla de decisión del comprador**, que es lo que se lleva el pedido
-      cuando alguien rechaza: quién no pudo y por qué, qué queda, cuánto costaría, y
-      tres salidas —seguir, editar o cancelar—. Mientras el total vivo no coincida
-      con `acknowledged_total_usd`, las instrucciones de pago se congelan y el admin
-      no puede confirmar nada. Al seguir se guarda el total nuevo y se reemiten.
-      El admin puede tomarla en nombre del comprador (suplantación), que es como se
-      va a resolver la mayoría por WhatsApp.
-- [ ] **El vencimiento del pedido en el cron**, que es el que cierra el círculo: al
-      llegar `orders.expires_at` se liberan todas sus reservas y el pedido se cancela.
-      Da igual en qué esperaba —a un proveedor callado, a un comprador que no decide,
-      a un Zelle que no llega—: los tres desagües acaban aquí, y por eso nada se queda
-      colgado indefinidamente. Un pedido ya `PAID` no vence: sus reservas están
-      consumidas y el reloj no le aplica.
+- [ ] Los dos vencimientos en el cron, y los dos tumban **una parte**, nunca el
+      pedido: el de confirmación (el proveedor no contestó) y el de la reserva (había
+      confirmado, pero se acabó el tiempo). Los dos dejan la parte en `EXPIRED`
+      —`confirmed_at` ya distingue cuál fue— y liberan su stock. El pedido solo se
+      cancela solo cuando no le queda ninguna parte viva.
+- [ ] **La pantalla de decisión del comprador**, que es donde acaban por igual el
+      rechazo y el vencimiento. Enseña **el pedido original entero**, línea por
+      línea, con lo que pasó con cada una en palabras: "no pudo atenderlo: sin
+      stock", "no respondió a tiempo", "lo aceptó, pero venció la reserva antes de
+      completar el pago", "confirma 2 de 3". Debajo, lo que queda y lo que costaría,
+      y tres salidas —seguir, editar o abandonar—.
+      *Nada de esto recorta el pedido por su cuenta: mientras el total vivo no
+      coincida con `acknowledged_total`, el cobro está congelado y el admin no puede
+      confirmar nada. Al seguir se guarda el total nuevo; `total` no se toca nunca.
+      El admin puede decidir en nombre del comprador (suplantación), que es como se
+      va a resolver la mayoría por WhatsApp.*
+- [ ] Un pedido ya `PAID` no vence: sus reservas están consumidas y el reloj no le
+      aplica.
 - [ ] Aviso antes de que se caiga, no después: recordatorio al comprador a falta de
       ~24 h con lo que tiene pendiente (pagar, o decidir), y al proveedor que aún no
       ha confirmado. Un pedido perdido por silencio se pierde dos veces.
@@ -894,23 +944,57 @@ Aquí hay **un** ajuste y todo lo demás se deriva de él:
 |---|---|
 | Retención del stock | `suppliers.reservation_hold_hours` (72 h si no dice nada) |
 | Confirmación del proveedor | `min(24 h, su propio hold)` |
-| Vencimiento del pedido | el **más temprano** de sus reservas vivas |
-| Decisión del comprador | el mismo vencimiento del pedido |
-| Plazo para pagar | el mismo vencimiento del pedido |
+| Lo próximo que le pasa al pedido | el **más temprano** de sus reservas vivas |
+| Decisión del comprador | ese mismo instante |
+| Plazo para pagar | ese mismo instante |
 
-Las tres últimas filas son el mismo instante escrito una vez (`orders.expires_at`).
-No es que se hayan cuadrado dos números: es que no hay dos.
+Las tres últimas filas son el mismo timestamp escrito una vez
+(`orders.expires_at`). No es que se hayan cuadrado dos números: es que no hay dos.
 
 Que lo fije el proveedor no es una concesión, es lo correcto: retener mercancía le
-cuesta a él, no a la plataforma. Y que mande el más impaciente tampoco es un castigo
-— es que en cuanto vence uno el pedido ya no se puede completar entero, así que
-enseñar cualquier otra fecha sería mentir.
+cuesta a él, no a la plataforma. Y que mande el más impaciente tampoco es un
+castigo — es simplemente lo primero que va a ocurrir, y enseñar cualquier otra
+fecha sería mentir.
 
-De la derivada salen gratis dos comportamientos que habría que haber programado
-aparte. Si el proveedor impaciente es justo el que rechaza, su reserva se libera, el
-mínimo se recalcula sobre los que quedan y **el comprador gana tiempo para decidir**
-sin que nadie se lo conceda. Y como el valor se recalcula solo sobre lo vivo, nunca
-puede acortarse por sorpresa: solo lo mueve algo que ya se cayó.
+**Lo que ese vencimiento tumba es una parte, no el pedido.** Es la diferencia entre
+un plazo y una guillotina: al llegar cae la parte cuya reserva era, se libera su
+stock, y el mínimo se recalcula sobre las que quedan — el pedido continúa con una
+fecha nueva y más lejana. Solo muere cuando se queda sin ninguna parte viva, que no
+es una fecha sino un recuento.
+
+De ahí sale gratis un comportamiento que habría que haber programado aparte: **el
+comprador gana tiempo para decidir** justo cuando algo se cae, sin que nadie se lo
+conceda. Y como el valor solo se recalcula sobre lo vivo, nunca puede acortarse por
+sorpresa: únicamente lo mueve algo que ya desapareció.
+
+### Paso 4c — El pedido no se recorta solo
+
+Un vencimiento y un rechazo son lo mismo desde el otro lado del mostrador: falta
+algo de lo que se pidió. Así que salen por la misma puerta —la pantalla de
+decisión— y ninguno de los dos toca el pedido por su cuenta. El sistema no elige
+por el comprador ni cuando la respuesta parece obvia.
+
+Y el pedido que se le enseña es **el que hizo**, entero. Nada se borra ni se
+recorta: cada línea sigue en la lista con lo que le pasó escrito al lado, incluidas
+—sobre todo— las que no llegaron. Eso obliga a distinguir cosas que un solo estado
+`CANCELLED` habría fundido en una:
+
+| Lo que ve el comprador | De dónde sale |
+|---|---|
+| "No pudo atenderlo: sin stock" | `DECLINED` + `decline_reason` |
+| "No respondió a tiempo" | `EXPIRED` con `confirmed_at` nulo |
+| "Lo aceptó, pero venció la reserva antes de pagar" | `EXPIRED` con `confirmed_at` escrito |
+| "Confirma 2 de los 3 que pediste" | `confirmed_quantity` < `quantity` |
+| "Lo quitaste del pedido" | `CANCELLED` |
+
+Ninguna de esas filas necesitó un estado nuevo: `EXPIRED` es uno solo y la columna
+que ya existía (`confirmed_at`) hace la distinción que importa.
+
+Y por eso `orders.total` es inmutable. Conviven tres cifras que dicen tres cosas
+distintas y que nunca se pisan: lo que se pidió (`total`, escrito una vez), lo que
+se pagaría hoy (la suma de las partes vivas, que se calcula y no se guarda) y lo
+que el comprador aceptó pagar (`acknowledged_total`). Un pedido es el registro de
+lo que alguien pidió, no un borrador que el sistema va limpiando.
 
 Lo que no se deriva y hay que escribir a mano es el suelo. Un hold de 12 h es
 perfectamente razonable para quien tiene dos paneles y gente entrando a la tienda,
@@ -951,11 +1035,15 @@ más tonto es olvidarse de que estás suplantando.
 - **La parte huérfana.** Una que nadie confirma y nadie rechaza es la que se lleva
   el pedido por delante. El plazo no es un adorno: es lo único que garantiza que
   toda parte llega a un final.
-- **El pedido esperando una decisión que nadie toma.** Resuelto por el mismo
-  `expires_at`: el comprador que no contesta y el que no paga acaban en el mismo
-  desagüe. Lo que queda por vigilar no es el modelo sino el aviso — que el
-  recordatorio salga a tiempo, porque cancelar en silencio se siente como un fallo
-  aunque sea la regla.
+- **El pedido esperando una decisión que nadie toma.** Ya no se cuelga: cada
+  vencimiento se lleva una parte, y cuando no queda ninguna el pedido se cierra por
+  recuento. Lo que queda por vigilar no es el modelo sino el aviso — que el
+  recordatorio salga antes, porque perder el pedido en silencio se siente como un
+  fallo aunque sea la regla.
+- **La tentación de limpiar.** En cuanto alguien quiera "simplificar" la pantalla
+  escondiendo las líneas caídas, o recalcular `total` para que cuadre con lo que se
+  paga, esto se rompe — y se rompe de la peor manera, porque el comprador deja de
+  reconocer su propio pedido. Lo que no llegó se cuenta; no se hace desaparecer.
 - **Relojes que se separan.** El día que alguien añada un plazo nuevo "solo para
   este caso", esto vuelve a estar roto. Toda espera nueva se deriva de
   `orders.expires_at` o cambia la derivada; ninguna se declara al lado.
