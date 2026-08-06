@@ -18,13 +18,15 @@ Marketplace de paneles solares y kits de energía. Los proveedores se registran 
 ## Modelo de datos
 
 ```
-users          id, name, email, password_hash, role (ADMIN | CUSTOMER), phone, zone_id
+users          id, name, email, password_hash, role (ADMIN | SUPPLIER | CUSTOMER),
+               phone, zone_id
 zones          id, name, state, parent_id?        ← jerarquía: estado → ciudad/municipio
 suppliers      id, name, slug, logo, phone, email, notes, payout_info (datos para
                liquidarles), default_equipment_scope   ← con qué alcance nacen sus servicios
 supplier_zones supplier_id, zone_id               ← en qué zonas opera cada proveedor
+supplier_users supplier_id, user_id               ← quién puede gestionar en nombre de quién
 products       id, supplier_id, name, slug, description, specs (jsonb), price_usd,
-               stock, images[], active
+               stock, reserved, images[], active   ← vendible = stock − reserved
 kits           id, supplier_id, name, slug, description, price_usd, images[], active
 kit_items      kit_id, product_id, quantity       ← un kit = combo de productos del proveedor
 service_categories  id, name, slug, description, position   ← paneles · kit completo · cableado
@@ -35,12 +37,29 @@ installation_offers service_id, target_type (PRODUCT | KIT), target_id
                                                    ← qué instalación se ofrece con qué item;
                                                      cruza de proveedor si el servicio no es OWN
 orders         id, order_number, user_id, zone_id, status, subtotal, total, created_at
-order_suppliers id, order_id, supplier_id, subtotal, status (PENDING | DELIVERED | CANCELLED)
-                                                   ← la parte del pedido de cada proveedor
+order_suppliers id, order_id, supplier_id, subtotal, confirmation_due_at,
+                confirmed_at, resolved_at, decline_reason,
+                status (PENDING | CONFIRMED | DELIVERED | DECLINED | CANCELLED)
+                                                   ← la parte del pedido de cada proveedor:
+                                                     la acepta, la entrega y se liquida sola
 order_items    id, order_supplier_id, item_type (PRODUCT | KIT | SERVICE), item_id,
                name_snapshot, price_snapshot, quantity
 payments       id, order_id, method (ZELLE | SUBY), status, zelle_reference,
                receipt_url, reported_at, confirmed_at, confirmed_by
+stock_movements     id, product_id, delta, reason (OPENING | RESTOCK | SALE | RELEASE |
+                    ADJUSTMENT | LOSS | RETURN), order_supplier_id?, note,
+                    actor_user_id, on_behalf_of_supplier_id, occurred_at
+                                                   ← el porqué de cada cambio de saldo
+stock_reservations  id, order_supplier_id, product_id, quantity, expires_at,
+                    status (HELD | CONSUMED | RELEASED)
+                                                   ← lo comprometido y todavía sin cobrar
+restocks            id, product_id, quantity, eta_from, eta_to, note, resolved_at,
+                    status (ANNOUNCED | ARRIVED | CANCELLED | EXPIRED)
+                                                   ← la reposición prometida, con ventana
+stock_alerts        id, product_id, user_id, created_at, notified_at
+                                                   ← "avísame cuando vuelva"
+price_schedules     id, target_type (PRODUCT | KIT | SERVICE), target_id, price_usd,
+                    starts_at, note                ← el precio como línea de tiempo
 ```
 
 Decisiones clave:
@@ -61,8 +80,83 @@ Decisiones clave:
 - **El alcance es del servicio, no del proveedor.** En este negocio la misma empresa quiere las dos cosas a la vez: "instalación de kit completo" solo sobre el suyo —responde por la garantía del conjunto— y "limpieza de paneles" sobre el de cualquiera. El proveedor sí fija con qué valor **nacen** sus servicios (`suppliers.default_equipment_scope`), que es comodidad del formulario y nada más: el alcance siempre queda escrito en la fila del servicio, y **ninguna consulta lee el default del proveedor** para resolver qué se ofrece.
   _El default es `OWN` en los dos sitios. Abrirse a equipo ajeno es una decisión con consecuencias —quien instala responde por lo que no vendió— y esas se toman a mano, no por omisión. Un **instalador puro** (proveedor sin productos ni kits) es el caso contrario: con todos sus servicios en `OWN` no podría vender ninguno, así que el formulario se lo avisa._
 - **La propiedad del equipo se consulta, no se supone.** Un servicio se puede contratar sobre equipo que el comprador ya tiene, y "ya tiene" significa una línea de `order_items` en un pedido suyo pagado. De ahí sale quién se lo vendió, y de ahí sale si un `OWN` le sirve. Es la mitad del requisito que hoy **no existe de ninguna forma**: el catálogo solo sabe vender servicios junto al equipo que se compra en el mismo pedido.
+- **Lo que existe y lo que se promete no comparten tabla.** El stock actual es un
+  hecho verificable —se cuenta en el almacén, se descuenta al vender, tiene que ser
+  transaccional—; la reposición futura es una intención con fecha borrosa. Juntas,
+  cada lectura de "¿puedo vender esto?" tendría que filtrar por fecha y un proveedor
+  optimista contaminaría lo vendible. Por eso el saldo vive en `products.stock` y la
+  promesa en `restocks`, y **anunciar no es vender**: en la Fase 1 nada que no haya
+  llegado entra al carrito (ver `stock_alerts`, y la pre-orden en la Fase 2).
+- **El saldo se queda; el porqué se va a un libro mayor.** `products.stock` sigue
+  siendo la columna que el catálogo lee en cada tarjeta, y `stock_movements` —solo
+  añadir, nunca editar— guarda el delta y el motivo de cada cambio. El histórico
+  sale gratis, y la doble contabilidad es segura porque su invariante se comprueba
+  con una query: `products.stock = sum(delta)`. Lo mismo con `products.reserved` y
+  las reservas `HELD`.
+- **La ventana *es* la incertidumbre.** Una reposición no lleva fecha, lleva
+  `eta_from`/`eta_to`. Estrecha significa "seguro", ancha significa "creo que sí", y
+  la UI no puede renderizarla como promesa aunque quiera: "entre el 10 y el 15" no
+  se lee igual que "el 12". Y caduca al leerse (`eta_to >= today`), porque un
+  anuncio rancio de hace un mes hace más daño que no tener ninguno.
+  _`restocks.quantity` es lo estimado y el movimiento `RESTOCK` de la llegada es lo
+  real: la distancia entre ambos, acumulada, dice qué proveedor cumple lo que anuncia._
+- **El precio es una línea de tiempo con una proyección cacheada.** `price_schedules`
+  es la verdad —filas pasadas: histórico; futuras: anunciado; el efectivo es el de
+  mayor `starts_at <= now()`— y `price_usd` de cada tabla se queda como caché de ese
+  efectivo. No es redundancia por pereza: el listado ordena y filtra por rango sobre
+  esa columna indexada, y resolverlo con un lateral join por fila mataría el índice
+  en la consulta principal del catálogo.
+- **El catálogo puede ir desfasado unos minutos; el checkout no.** De ahí sale todo
+  el mecanismo: un cron promueve los precios vencidos y libera las reservas
+  caducadas, y aun así el checkout **relee el precio efectivo del schedule**, nunca
+  la caché. Si el cron llega tarde, el listado enseña un precio viejo un rato; nadie
+  cobra mal.
+- **Reservar con caducidad no es opcional con pago manual.** Entre "pedido creado" y
+  "pago confirmado" pasan días. Si el stock baja al confirmar, dos personas compran
+  el último panel y a una hay que devolverle; si baja al hacer checkout, un carrito
+  abandonado mata esa unidad para siempre. La reserva cuelga de `order_suppliers`,
+  así que cancelar la parte de un proveedor devuelve exactamente su stock y el de
+  nadie más.
+- **Suplantar es un ámbito, no un cambio de identidad.** El admin gestiona el
+  inventario en nombre de un proveedor y el proveedor lo gestiona por su cuenta: la
+  sesión lleva `userId` (quién eres, nunca cambia), `role` y `actingSupplierId`
+  (sobre qué proveedor operas). Para un `SUPPLIER` ese ámbito sale de
+  `supplier_users` y no de la petición; para un `ADMIN` es el que haya elegido. El
+  libro mayor firma con el usuario real más a nombre de quién actuó, así que dice
+  "el admin ajustó el stock de Solar Caribe" y nunca miente.
 - **Snapshots en `order_items`**: se copia nombre y precio al momento de la compra, para que cambios posteriores de precio no alteren órdenes viejas. El subtotal de cada `order_suppliers` es un snapshot más: es lo que se le liquida a ese proveedor, no una suma que se recalcula en cada lectura.
-- **Estados de orden**: `PENDING_PAYMENT → PAYMENT_REPORTED → PAID → COMPLETED` (+ `CANCELLED`). El pago es del pedido entero; la **entrega** es de cada proveedor (`order_suppliers.status`: `PENDING → DELIVERED`, o `CANCELLED` si esa parte se cae). El pedido llega a `COMPLETED` cuando todas sus partes vivas están entregadas.
+- **Tres ejes, no uno.** El **pago** es del pedido entero; la **aceptación** y la
+  **entrega** son de cada proveedor. Los tres avanzan por su cuenta y ninguno vive
+  en la columna del otro: `orders.status` es
+  `PENDING_PAYMENT → PAYMENT_REPORTED → PAID → COMPLETED` (+ `CANCELLED`) y habla
+  solo de dinero; `order_suppliers.status` es `PENDING → CONFIRMED → DELIVERED`
+  (+ `DECLINED` si el proveedor dice que no, `CANCELLED` si se cae por cualquier
+  otro motivo) y habla solo de esa parte. El pedido llega a `COMPLETED` cuando
+  todas sus partes vivas están entregadas.
+  _Meter la aceptación en `orders.status` volvería a juntar lo que costó separar:
+  un pedido no está "medio aceptado", son sus partes las que lo están._
+- **Aceptar no es entregar, y la orden aceptada es una derivada.** El proveedor
+  confirma que tiene lo suyo y que puede llevarlo; entregarlo es más tarde. "La
+  orden está aceptada" no se guarda en ninguna columna — se lee de las partes,
+  igual que `COMPLETED`. Y **la puerta ya existe**: es el admin confirmando el
+  Zelle. Un pedido no pasa a `PAID` si alguna parte viva sigue sin confirmar, así
+  que no hace falta un estado nuevo, hace falta una comprobación en la Action que
+  ya vamos a escribir.
+- **El proveedor callado no congela el pedido.** Sin plazo, uno que no contesta
+  deja la orden en el limbo y el stock reservado de rehén. Por eso la parte nace
+  con `confirmation_due_at` y la barre el mismo cron que las reservas: al vencer
+  **cae la parte, nunca el pedido** — el resto sigue su curso. Los que sí
+  confirmaron pueden ir preparando lo suyo sin esperar al último.
+- **Se confirma la parte, no la línea.** La parte es lo que tiene subtotal y lo que
+  se liquida; media parte aceptada no significa nada. Y con el stock ya reservado
+  en el checkout, que un proveedor descubra que no tiene es la excepción y no la
+  regla —es un descuadre físico, no una sorpresa de disponibilidad—: para eso está
+  ajustar la cantidad de la línea o rechazar la parte entera.
+- **Si una parte se cae antes de cobrar, el total se reescribe.** El monto exacto
+  es la referencia del Zelle, así que no puede mentir: se recalcula `orders.total`
+  sobre las partes vivas y se reemiten las instrucciones. Después de `PAID` ya no se
+  reescribe nada — una parte que se cae ahí es una devolución, y se hace a mano
+  como todo lo demás en esta fase.
 - **Estados de pago**: `PENDING → REPORTED → CONFIRMED / REJECTED`.
 - `payments.method` ya contempla `SUBY` para que la Fase 2 no requiera migración.
 
@@ -71,13 +165,20 @@ Decisiones clave:
 1. Usuario elige su zona → ve proveedores y catálogo disponibles ahí.
 2. Arma el carrito (productos, kits y/o instalación, de **uno o varios proveedores**) → checkout.
 3. Se crea la orden en `PENDING_PAYMENT` —con una fila de `order_suppliers` por
-   proveedor del carrito— y se muestran las instrucciones Zelle (email/teléfono de
-   la cuenta central, monto exacto **total**, número de orden como concepto).
-4. Usuario reporta el pago: número de referencia Zelle + captura del comprobante (opcional).
+   proveedor del carrito y el stock ya **reservado**— y se muestran las
+   instrucciones Zelle (email/teléfono de la cuenta central, monto exacto **total**,
+   número de orden como concepto). El comprador no espera a nadie para poder pagar.
+4. **En paralelo**, cada proveedor confirma su parte (él desde su portal, o tú por
+   teléfono en su nombre). El comprador ve el marcador en su pedido —"2 de 3
+   confirmados"—, no una caja negra. La parte que no se confirme dentro de su plazo
+   se cae sola y libera su reserva; las demás siguen.
+5. Usuario reporta el pago: número de referencia Zelle + captura del comprobante (opcional).
    La orden pasa a `PAYMENT_REPORTED`.
-5. Tú verificas el Zelle en tu banco y desde el panel admin confirmas o rechazas.
-   Al confirmar: orden → `PAID`, email de confirmación al cliente.
-6. Coordinas la entrega con **cada** proveedor del pedido, marcas su parte como
+6. Tú verificas el Zelle en tu banco y desde el panel admin confirmas o rechazas.
+   **Confirmar exige que no quede ninguna parte viva sin confirmar** — es la puerta
+   donde los dos caminos se juntan. Al confirmar: orden → `PAID`, las reservas se
+   consumen y bajan el stock, y sale el email al cliente.
+7. Coordinas la entrega con **cada** proveedor del pedido, marcas su parte como
    entregada y le liquidas manualmente (fuera del sistema en esta fase; el
    subtotal de su fila en `order_suppliers` ya dice cuánto le toca).
 
@@ -169,9 +270,46 @@ Decisiones clave:
       *Es lo único incoherente que hay hoy: un servicio se vende suelto a
       cualquiera aunque su proveedor solo quiera trabajar sobre lo suyo. No es
       una decisión que haya que tomar aparte — sale del propio alcance.*
+- [ ] Lo agotado deja de ser un callejón: la tarjeta de un producto sin stock pero
+      con reposición anunciada dice hasta cuándo va la ventana ("vuelve aprox. la
+      semana del 12"), y la ficha ofrece el aviso de `stock_alerts` en lugar del
+      botón de compra. Hoy los agotados ya salen en el listado, así que es enriquecer
+      lo que hay y no añadir una rama. **Va después de la Etapa 5.5.**
+- [ ] Filtro "incluir lo que llega pronto" en la barra del catálogo, apagado por
+      defecto: lo primero que se ve es lo que se puede comprar hoy.
 - [x] SEO básico: metadata, slugs limpios, Open Graph.
 
-### Etapa 6 — Carrito y checkout (2 días)
+### Etapa 5.5 — Inventario y precios en el tiempo (2–3 días)
+
+Va **antes** de la Etapa 6 por el mismo motivo que los dos cambios de schema
+anteriores: la validación de stock y el "precio releído" del checkout todavía no
+están escritos, así que se escriben una sola vez ya sabiendo que hay reservas y
+schedules. Al revés habría que reescribirlos y migrar pedidos reales. Ver
+«Inventario, reposiciones y precio en el tiempo» más abajo.
+
+- [ ] Schema y migraciones con **backfill**: un movimiento `OPENING` por producto
+      con el stock de hoy y una fila de `price_schedules` por producto/kit/servicio
+      con su precio actual. Desde el primer minuto las dos invariantes se cumplen y
+      se pueden testear — a diferencia de la `0003`, aquí `products` **no** está
+      vacía, así que ninguna columna nueva entra `NOT NULL` sin default.
+- [ ] `lib/inventory/` — el único sitio que escribe stock. Ajuste manual, anuncio y
+      llegada de reposición, y las primitivas de reserva. Toda mutación recibe el
+      ámbito de proveedor como parámetro (hoy siempre "el admin actuando como X"),
+      para que abrir el portal después sea vestir formularios y no reescribirlos.
+- [ ] `lib/pricing/` — precio efectivo, precio programado y promoción de vencidos.
+- [ ] Disponibilidad de un kit, que hoy no existe: es la derivada
+      `min(floor((stock − reserved) / cantidad))` sobre sus piezas. **Es un bug de
+      hoy**, no de este cambio: `catalog/queries.ts` pone `stock: 1` en la rama de
+      kits "para cuadrar la unión" y `toItem` solo marca agotado si es `PRODUCT`, así
+      que ahora mismo se puede vender un kit cuyos paneles se acabaron. Vender un kit
+      descuenta sus **componentes**, nunca el kit.
+- [ ] Cron en Vercel (hace falta `vercel.ts`, que el repo todavía no tiene): promover
+      precios vencidos, liberar reservas caducadas y caducar anuncios pasados de
+      ventana. Idempotente — se puede correr dos veces sin descuadrar nada.
+- [ ] Admin mínimo: ajustar stock con motivo, anunciar y resolver una reposición,
+      programar un precio. El histórico rico y el panel de fiabilidad son Etapa 8.
+
+### Etapa 6 — Carrito y checkout (2–3 días)
 - [x] Carrito client-side (Zustand) persistido en localStorage.
       *`lib/cart/lines.ts` (el dato puro, importable desde servidor) +
       `lib/cart/store.ts` (el store con `persist`). La UI es el botón de la
@@ -193,9 +331,22 @@ Decisiones clave:
       `order_suppliers` por grupo. Si la orden lleva instalación, la dirección de
       entrega es la de la obra; la fecha se coordina a mano en esta fase.
 - [ ] Revalidación del carrito en el servidor, grupo a grupo: proveedor activo,
-      item activo y de ese proveedor, precio releído, stock suficiente y
-      **cobertura de la zona de entrega**. Si un grupo falla se para el checkout
-      y se dice cuál — nunca se descarta una línea en silencio.
+      item activo y de ese proveedor, precio releído **del schedule y no de la
+      caché**, stock suficiente y **cobertura de la zona de entrega**. Si un grupo
+      falla se para el checkout y se dice cuál — nunca se descarta una línea en
+      silencio.
+- [ ] El stock no se comprueba, se **reserva**: `UPDATE products SET reserved =
+      reserved + n WHERE id = ? AND stock − reserved >= n`. Cero filas devueltas
+      significa que no había, y es atómico en una sola sentencia — sin lock abierto
+      entre dos viajes a la base. La reserva nace con `expires_at` a la ventana del
+      Zelle (~72 h) y cuelga de su `order_suppliers`.
+- [ ] **El driver de base de datos tiene que cambiar en esta etapa.** `lib/db/index.ts`
+      usa `drizzle-orm/neon-http`, que es HTTP de un solo tiro: manda un lote de
+      queries pero no deja leer, decidir en JS y escribir dentro de la misma
+      transacción. Crear la orden son varias escrituras (`orders`,
+      `order_suppliers`, `order_items` y N reservas) que o entran todas o no entra
+      ninguna, así que el camino de escritura necesita `neon-serverless` con `Pool`.
+      Las lecturas se pueden quedar como están.
 - [ ] Y una validación que no es por grupo sino entre grupos: un servicio que no
       sea `ANY` tiene que llegar con su equipo. En el carrito eso es un item del
       proveedor que toque —el suyo si es `OWN`, el de cualquiera si es
@@ -209,14 +360,36 @@ Decisiones clave:
 - [ ] Un servicio `ANY` contratado solo es trabajo sobre equipo que el cliente ya
       tiene y la plataforma no conoce: el checkout le pide describirlo, y eso va
       a `orders.notes` para que el instalador sepa a qué va.
-- [ ] Página "Mis órdenes" en la cuenta del usuario, con estado en tiempo real:
-      el del pago para el pedido y el de entrega para cada proveedor.
+- [ ] Página "Mis órdenes" en la cuenta del usuario, con los tres ejes en tiempo
+      real: el pago para el pedido, y la aceptación y la entrega para cada
+      proveedor. El marcador "2 de 3 confirmados" va arriba: es lo que el comprador
+      mira mientras espera, y no saberlo es lo que le hace escribir para preguntar.
 
 ### Etapa 7 — Pago manual Zelle (2 días) ★ meta de la fase
 - [ ] Página de instrucciones de pago post-checkout: datos Zelle de la cuenta central, monto, número de orden como referencia.
 - [ ] Formulario de reporte de pago: referencia Zelle + subida de comprobante → `PAYMENT_REPORTED`.
 - [ ] Panel admin de pagos: cola de pagos reportados, ver comprobante, confirmar o rechazar (rechazo con motivo, el usuario puede re-reportar).
-- [ ] Emails con Resend: orden creada (con instrucciones), pago recibido/en revisión, pago confirmado, pago rechazado.
+- [ ] **La confirmación de la parte, con sus dos manos.** El proveedor acepta o
+      rechaza lo suyo (con motivo), y el admin puede hacerlo en su nombre —que en
+      la Fase 1 es el camino normal: se resuelve por teléfono—. Es exactamente el
+      `actingSupplierId` del inventario, sin una sola línea de permisos nueva, y el
+      registro guarda quién lo hizo de verdad.
+- [ ] La puerta: confirmar el pago exige que ninguna parte viva siga en `PENDING`.
+      La cola de pagos lo enseña en la fila —"1 proveedor sin confirmar"— y la
+      Action lo comprueba; no basta con esconder el botón.
+- [ ] Plazo de confirmación en el cron: la parte vencida pasa a `CANCELLED`, libera
+      su reserva y **reescribe el total del pedido** si todavía no se ha cobrado,
+      con instrucciones Zelle nuevas. El pedido sin ninguna parte viva se cancela.
+- [ ] Emails con Resend: orden creada (con instrucciones), parte confirmada o caída
+      —con el total nuevo si cambió—, pago recibido/en revisión, pago confirmado,
+      pago rechazado. Y al proveedor: "tienes una parte por confirmar", que es lo
+      que hace que el plazo signifique algo.
+- [ ] El pago cierra el ciclo del stock: al confirmar, las reservas del pedido pasan
+      a `CONSUMED` y bajan el saldo con un movimiento `SALE`; al rechazar o cancelar,
+      a `RELEASED` y devuelven lo suyo. Marcar `CANCELLED` la parte de un proveedor
+      devuelve **solo** su stock.
+- [ ] Cuando una reposición llega, sale el mail de `stock_alerts` a quien lo pidió
+      (mismo Resend que el resto de la etapa).
 - [ ] Vista admin de órdenes: el pedido con sus partes, y marcar entregada la de
       cada proveedor.
 - [ ] Vista de liquidaciones: totales por proveedor, que ahora es un `group by`
@@ -229,7 +402,8 @@ Decisiones clave:
 - [ ] Dominio propio en Vercel, rama `prod` de Neon, variables de producción.
 - [ ] Prueba end-to-end real: registrar usuario → comprar → reportar Zelle → confirmar como admin → recibir email.
 
-**Total estimado: ~2 a 3 semanas** de trabajo enfocado hasta aquí.
+**Total estimado: ~3 semanas** de trabajo enfocado hasta aquí. La Etapa 5.5 sumó
+unos días, y son los que evitan reescribir el checkout con pedidos reales encima.
 
 ### Etapa 9 — Servicio post-venta sobre equipo ya comprado (2 días)
 
@@ -253,6 +427,41 @@ antes de que haya pedidos pagados**, y hoy no hay ninguno.
       `order_items`, y por eso conviene decidirla aquí y no antes.
 - [ ] El bloque de compra de la ficha de un servicio `OWN`/`PLATFORM` aprende esta
       segunda puerta: ya no solo mira el carrito, también los equipos del usuario.
+
+### Etapa 10 — Portal del proveedor (2–3 días)
+
+Que cada proveedor gestione lo suyo sin pasar por el admin. No depende de que haya
+pedidos pagados, así que puede adelantarse por delante de la Etapa 9; va después de
+producción porque abre una superficie de auth nueva y es mejor estrenarla con el
+flujo principal ya rodado. El modelo de inventario y el de confirmación no cambian
+ni una columna: lo único que cambia es **quién** rellena el formulario.
+
+Y es la etapa que más se paga sola. En la Fase 1 cada confirmación de parte pasa
+por ti al teléfono, así que el admin es el cuello de botella de todos los pedidos
+del marketplace a la vez. Aquí eso deja de serlo.
+
+- [ ] Rol `SUPPLIER` en `user_role` y tabla `supplier_users`. Un negocio puede tener
+      dos personas sin migrar nada, y la forma es la que ya usa `supplier_zones`.
+- [ ] `actingSupplierId` en la sesión, con las dos puertas: para un `SUPPLIER` sale
+      de `supplier_users` y **nunca** de la petición; para un `ADMIN` es el proveedor
+      que haya elegido, y puede cambiarlo sin salirse de su propia sesión.
+      `requireSupplierScope()` en `lib/dal.ts` es el único sitio que lo resuelve, y
+      `proxy.ts` filtra `/portal/**` por el rol de la cookie como primer corte.
+- [ ] **Repasar todas las Server Actions que ya existen.** Hoy `products.ts`,
+      `kits.ts`, `services.ts` y `service-categories.ts` reciben el `supplierId` del
+      formulario y se fían, porque el único que llega hasta ahí es el admin. Con un
+      login de proveedor eso es un IDOR: cambiar un campo oculto y editar el catálogo
+      de otro. El ámbito pasa a salir de la sesión y el del `FormData` se ignora.
+      **Este item es el coste real de la etapa, no el login.**
+- [ ] `/portal`: sus productos, kits y servicios; su inventario y sus precios; y
+      cuánta gente está esperando cada reposición (`stock_alerts`). Fuera de su
+      alcance: zonas de cobertura y `payout_info` —son trato comercial, los toca el
+      admin— y todo lo de los proveedores ajenos.
+- [ ] **Su cola de partes por confirmar**, que es la razón de verdad para entrar:
+      lo que le han pedido, con su plazo a la vista, y aceptar o rechazar desde
+      ahí. Lo que hasta ahora hacía el admin por teléfono en su nombre.
+- [ ] Sus liquidaciones: el `group by` sobre `order_suppliers` de la Etapa 7, pero
+      recortado a los suyos. La fila con lo que le toca existe desde la Fase 1.
 
 ## Pedidos multi-proveedor y servicios sobre equipo ajeno (cambio en curso)
 
@@ -406,12 +615,125 @@ Un kit sigue siendo de un solo proveedor (`kit_items`). El catálogo sigue
 filtrando por zona igual que hoy. Y el pago sigue siendo uno por pedido: nada de
 esto parte el Zelle.
 
+## Inventario, reposiciones y precio en el tiempo (cambio planificado)
+
+El punto de partida: un proveedor se queda sin paneles hoy y en una semana tiene
+otra vez, y el comprador debería poder ver las dos cosas —lo que hay ahora, con su
+precio, y lo que va a llegar— sin que lo segundo se lea como una promesa. Las
+decisiones están arriba; esto es el mecanismo, y **en este orden**.
+
+**Suena a cambio grande y lo es en superficie, pero no en riesgo.** Todo lo que
+toca el pedido —`orders`, `order_suppliers`, `order_items`— está vacío y no tiene
+encima ni una lectura ni una escritura del código: cambiar su forma no rompe ningún
+flujo porque no hay flujo todavía. Lo demás es aditivo (columnas con default, tablas
+nuevas, valores nuevos en dos enums). La única tabla con datos reales que se toca es
+`products`, y solo para añadirle `reserved` y sembrarle su saldo de apertura. Los
+dos cambios de verdad no son de schema: el driver de escritura, y que las Actions
+que hoy se fían del `supplierId` del formulario dejen de hacerlo.
+
+Igual que con `orders` y con `equipment_scope`, el schema entra antes de que exista
+el código que lo usaría. La diferencia esta vez es que `products` **no** está vacía:
+hay filas del seed y las que se hayan cargado a mano. Ninguna columna nueva puede
+entrar `NOT NULL` sin default, y el backfill no es opcional.
+
+### Paso 1 — El saldo, el libro mayor y la reserva
+
+`products.stock` se queda con el mismo nombre —renombrarlo obligaría a contestar el
+`DROP`+`ADD` de `drizzle-kit` que ya nos costó partir la `0003` en dos— y a su lado
+nace `reserved`. Lo vendible es la resta, y esa resta es lo que mira el catálogo, la
+ficha y el checkout.
+
+El movimiento del checkout es una sola sentencia condicional
+(`WHERE stock − reserved >= n`), no un `SELECT` seguido de un `UPDATE`: así no hay
+ventana entre leer y escribir, que es donde se cuelan las ventas duplicadas del
+último ejemplar. Lo que sí necesita transacción es envolver esa reserva con la
+creación del pedido — de ahí el cambio de driver anotado en la Etapa 6.
+
+`stock_movements` explica cada cambio y es la única forma de escribir stock: el
+ajuste del admin, la llegada de una reposición, la venta, la liberación de una
+reserva caducada, la pérdida. Nada toca la columna por su cuenta, y por eso la
+invariante se sostiene.
+
+### Paso 2 — La promesa, que vive aparte y caduca sola
+
+`restocks` no toca el saldo. Es lo que el proveedor anuncia: cuánto cree que le
+entra y entre qué dos fechas. Cuando llega, la fila pasa a `ARRIVED` **y** se
+escribe un movimiento `RESTOCK` con la cantidad real — dos hechos distintos, y la
+distancia entre ellos es la métrica de quién cumple.
+
+Lo que la consulta pública lee es solo `ANNOUNCED` con `eta_to >= today`, así que un
+anuncio olvidado desaparece del catálogo sin que nadie vaya a limpiarlo. El cron lo
+marca `EXPIRED` después para que el proveedor lo vea en su lista y lo resuelva.
+
+Nada de esto entra al carrito en la Fase 1. Lo que se ofrece en su lugar es
+`stock_alerts`, que además de no tocar dinero produce el dato que el proveedor
+necesita para decidir cuánto pedir.
+
+### Paso 3 — El precio, con dos velocidades
+
+`price_schedules` es la verdad y `price_usd` la caché del efectivo. La única razón
+de la caché es el listado: ordena y filtra por rango sobre esa columna indexada, y
+resolverlo por fila con un lateral join sería pagar la temporalidad en la consulta
+más caliente del sitio para ganar una exactitud que ahí no hace falta.
+
+Donde sí hace falta es en el dinero, y ahí se paga: el checkout relee el efectivo
+del schedule antes de escribir el snapshot de `order_items`. El cron promueve, pero
+la corrección no depende de que el cron haya corrido.
+
+Aplica a productos, kits y servicios. El stock, solo a productos — un servicio es
+mano de obra y no tiene existencias, y eso no cambia; un kit no tiene stock propio
+sino derivado de sus piezas.
+
+### Paso 4 — La parte se acepta antes de entregarse
+
+Es el tercer eje —pago, aceptación, entrega— y el único que no existía en ninguna
+forma. `fulfillmentStatus` gana `CONFIRMED` y `DECLINED`, y la parte gana su plazo.
+No hay estado nuevo en `orders`: "aceptada" se deriva de las partes, igual que
+`COMPLETED`.
+
+Encaja con la reserva sin inventar nada. La reserva nace en el checkout y vive
+mientras la parte esté viva: si el proveedor rechaza, se libera en ese momento; si
+deja vencer su plazo, la libera el cron; si el pago se confirma, se consume. Los
+tres finales pasan por el mismo sitio, que es lo que hace que el stock no se quede
+colgado en ninguno.
+
+El plazo es lo que impide que un proveedor callado bloquee un pedido ajeno: al
+vencer cae **su** parte y el resto sigue. Y como el monto exacto del Zelle es la
+referencia con la que se concilia, una parte que cae antes de cobrar reescribe
+`orders.total` y reemite instrucciones; después de `PAID` no se reescribe nada,
+porque ahí ya es una devolución.
+
+Quién puede confirmar sale del mismo `actingSupplierId` del paso anterior, sin una
+línea de permisos nueva: en la Fase 1 el admin lo hace en nombre del proveedor
+—por teléfono, como se verifica el Zelle— y con el portal lo hace el proveedor.
+El registro guarda siempre quién lo hizo de verdad.
+
+### Lo que hay que vigilar
+
+- **La parte huérfana.** Una que nadie confirma y nadie rechaza es la que se lleva
+  el pedido por delante. El plazo no es un adorno: es lo único que garantiza que
+  toda parte llega a un final.
+- **Doble contabilidad.** `stock`/movimientos y `price_usd`/schedules son dos pares
+  que pueden descuadrar. Se aceptan por lectura, no por comodidad, y a cambio las
+  dos invariantes son queries que caben en un test.
+- **Reservas colgadas.** Un checkout que nunca se paga tiene que devolver su stock
+  solo. El barrido del cron es idempotente, y `expires_at` es el que manda.
+- **Anuncios rancios.** Resueltos leyendo por ventana, no por limpieza manual.
+- **El kit que se vende sin piezas.** Existe hoy y hay que arreglarlo aquí.
+
 ## Fase 2 (fuera de alcance por ahora)
 - **Agendar la instalación**: fecha y ventana horaria, con sus estados de orden
   (`SCHEDULED` → `INSTALLED`) en una tabla `order_installations` aparte. En Fase 1
   se coordina por teléfono, igual que la verificación del Zelle.
 - **Servicios a presupuestar** (`pricing = QUOTE`): solicitud del cliente →
   cotización del admin → orden. No cabe en el carrito, es un flujo propio.
+- **Pre-orden de lo anunciado**: comprar hoy lo que llega la semana que viene. Se
+  descarta en la Fase 1 a propósito — con el Zelle manual sería cobrar por
+  adelantado contra una fecha que nosotros mismos presentamos como aproximada.
+  Necesita reservas contra promesa además de contra saldo, un estado de pedido para
+  lo que aún no existe y una política de devolución para cuando la reposición no
+  llega. Con el pago automático y un historial de `restocks` que diga qué proveedor
+  cumple, la conversación es otra.
 - Integración de pago automático con suby.fi (todo a la cuenta central), reutilizando `payments.method = SUBY`.
 - Liquidaciones a proveedores registradas dentro del sistema: son columnas de
   estado sobre `order_suppliers` (pagada, cuándo, referencia), no una tabla
