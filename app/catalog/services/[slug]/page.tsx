@@ -8,7 +8,9 @@ import {
 import { CatalogDetailHead } from "@/components/catalog/detail/detail-head";
 import { CatalogDetailShell } from "@/components/catalog/detail/detail-shell";
 import { CatalogSupplierReach } from "@/components/catalog/detail/supplier-block";
+import { ServicePurchaseBlock } from "@/components/catalog/detail/service-purchase";
 // import { CatalogSupplierRelated } from "@/components/catalog/detail/supplier-related";
+import type { CartItem } from "@/lib/cart/lines";
 import { itemPhotos } from "@/lib/catalog/photos";
 import { getCatalogService } from "@/lib/catalog/queries";
 
@@ -53,6 +55,28 @@ export default async function ServicePage({ params }: ServicePageProps) {
 
   const photos = itemPhotos(service.images, service.name);
 
+  const item: CartItem = {
+    type: "SERVICE",
+    id: service.id,
+    slug: service.slug,
+    name: service.name,
+    priceUsd: service.priceUsd,
+    unitLabel: service.unitLabel,
+    image: service.images[0] ?? null,
+    supplierSlug: service.supplier.slug,
+    supplierName: service.supplier.name,
+    // La mano de obra no tiene existencias que agotar.
+    stock: null,
+  };
+
+  const note = (
+    <p className="text-muted-foreground text-marginalia font-mono">
+      {service.pricing === "PER_UNIT"
+        ? `se cobra por ${service.unitLabel}: elige cuántos`
+        : "precio cerrado del trabajo"}
+    </p>
+  );
+
   return (
     <CatalogDetailShell
       photos={photos}
@@ -64,25 +88,16 @@ export default async function ServicePage({ params }: ServicePageProps) {
           name={service.name}
           priceUsd={service.priceUsd}
           unitLabel={service.unitLabel}
-          item={{
-            type: "SERVICE",
-            id: service.id,
-            slug: service.slug,
-            name: service.name,
-            priceUsd: service.priceUsd,
-            unitLabel: service.unitLabel,
-            image: service.images[0] ?? null,
-            supplierSlug: service.supplier.slug,
-            supplierName: service.supplier.name,
-            // La mano de obra no tiene existencias que agotar.
-            stock: null,
-          }}
-          note={
-            <p className="text-muted-foreground text-marginalia font-mono">
-              {service.pricing === "PER_UNIT"
-                ? `se cobra por ${service.unitLabel}: elige cuántos`
-                : "precio cerrado del trabajo"}
-            </p>
+          item={item}
+          note={note}
+          // Vender o explicar lo decide el carrito, que solo el cliente conoce.
+          purchase={
+            <ServicePurchaseBlock
+              item={item}
+              equipmentScope={service.equipmentScope}
+              supplierName={service.supplier.name}
+              note={note}
+            />
           }
         />
       }

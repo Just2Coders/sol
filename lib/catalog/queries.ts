@@ -27,6 +27,7 @@ import {
   zones,
 } from "@/lib/db/schema";
 import { sumItemsUsd, type KitItemDetail } from "@/lib/kits/queries";
+import type { EquipmentScope } from "@/lib/services/enums";
 import {
   CATALOG_PAGE_SIZE,
   type CatalogFilters,
@@ -631,6 +632,12 @@ export type CatalogService = {
   priceUsd: number;
   pricing: ServicePricing;
   unitLabel: string | null;
+  /**
+   * Sobre qué equipo trabaja. La ficha lo necesita para decidir si puede
+   * venderse a ciegas: solo un `ANY` se contrata sin traer nada, los otros dos
+   * tienen que llegar con su equipo (`cartCoversService`).
+   */
+  equipmentScope: EquipmentScope;
   images: string[];
   categoryName: string;
   supplier: CatalogItemSupplier;
