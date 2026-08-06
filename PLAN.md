@@ -1,6 +1,8 @@
 # Solaris — Plan de desarrollo (Fase 1: hasta compra manual vía Zelle)
 
-Marketplace de paneles solares y kits de energía. Los proveedores se registran por el admin (tú), publican productos y kits, los usuarios ven qué proveedores operan en su zona y compran. El pago en esta fase es manual vía Zelle a una cuenta central; la integración automática (suby.fi) queda para la Fase 2.
+Marketplace de paneles solares y kits de energía. Los proveedores se registran por el admin (tú), publican productos y kits, los usuarios ven qué proveedores operan en su zona y compran.
+
+**Sobre el pago:** los medios principales van a ser **QvaPay** y **suby.fi**, y ninguno de los dos está disponible todavía —faltan las integraciones y los permisos—, así que quedan para una etapa posterior. El Zelle manual a una cuenta central **no es el destino, es el puente**: es lo que permite cobrar de verdad mientras tanto, y por eso es la meta de la Fase 1. El modelo de pagos se diseña sabiendo que van a entrar los tres, para que llegar a ellos no pida migración.
 
 ## Stack
 
@@ -25,6 +27,8 @@ suppliers      id, name, slug, logo, phone, email, notes, payout_info (datos par
                liquidarles), default_equipment_scope   ← con qué alcance nacen sus servicios
 supplier_zones supplier_id, zone_id               ← en qué zonas opera cada proveedor
 supplier_users supplier_id, user_id               ← quién puede gestionar en nombre de quién
+impersonation_sessions  id, actor_user_id, target_user_id, reason, started_at,
+                        ended_at, expires_at      ← el admin actuando como otro, con motivo
 products       id, supplier_id, name, slug, description, specs (jsonb), price_usd,
                stock, reserved, images[], active   ← vendible = stock − reserved
 kits           id, supplier_id, name, slug, description, price_usd, images[], active
@@ -44,7 +48,7 @@ order_suppliers id, order_id, supplier_id, subtotal, confirmation_due_at,
                                                      la acepta, la entrega y se liquida sola
 order_items    id, order_supplier_id, item_type (PRODUCT | KIT | SERVICE), item_id,
                name_snapshot, price_snapshot, quantity
-payments       id, order_id, method (ZELLE | SUBY), status, zelle_reference,
+payments       id, order_id, method (ZELLE | QVAPAY | SUBY), status, reference,
                receipt_url, reported_at, confirmed_at, confirmed_by
 stock_movements     id, product_id, delta, reason (OPENING | RESTOCK | SALE | RELEASE |
                     ADJUSTMENT | LOSS | RETURN), order_supplier_id?, note,
@@ -117,13 +121,28 @@ Decisiones clave:
   abandonado mata esa unidad para siempre. La reserva cuelga de `order_suppliers`,
   así que cancelar la parte de un proveedor devuelve exactamente su stock y el de
   nadie más.
-- **Suplantar es un ámbito, no un cambio de identidad.** El admin gestiona el
-  inventario en nombre de un proveedor y el proveedor lo gestiona por su cuenta: la
-  sesión lleva `userId` (quién eres, nunca cambia), `role` y `actingSupplierId`
-  (sobre qué proveedor operas). Para un `SUPPLIER` ese ámbito sale de
-  `supplier_users` y no de la petición; para un `ADMIN` es el que haya elegido. El
-  libro mayor firma con el usuario real más a nombre de quién actuó, así que dice
-  "el admin ajustó el stock de Solar Caribe" y nunca miente.
+- **El admin puede actuar como cualquier usuario, y eso es una sola pieza.** Mucho
+  de este negocio se cierra fuera de la aplicación —por teléfono o WhatsApp— y
+  después alguien tiene que dejarlo escrito dentro: el proveedor que confirma de
+  palabra, el comprador que dicta su pedido. El admin elige a un usuario de una
+  lista y opera como él. La sesión lleva `userId` (**quién eres de verdad, nunca
+  cambia**) y `impersonatedUserId` (opcional); todo lo que la app lee y escribe usa
+  el usuario **efectivo**, que es el suplantado si lo hay y tú si no.
+  _`actingSupplierId` no es una segunda pieza: es una derivada del efectivo contra
+  `supplier_users`, y por eso el proveedor en su portal y el admin en su nombre
+  recorren exactamente el mismo código._
+- **Toda escritura firma con el real, no con el efectivo.** El libro mayor de stock,
+  el pedido creado, la parte confirmada: cada uno guarda quién lo hizo de verdad
+  junto a en nombre de quién. Así el histórico dice "el admin confirmó la parte de
+  Solar Caribe" y nunca miente, que es justo lo que se pierde si suplantar fuera
+  cambiar de sesión.
+- **Suplantar tiene cosas prohibidas, y son las que protegen al suplantado.** No se
+  puede cambiar su contraseña ni su email (sería robarle la cuenta), no se puede
+  borrar la cuenta, no se puede encadenar otra suplantación, y **no se puede
+  confirmar un pago**: si el mismo actor crea el pedido y da el cobro por bueno, no
+  queda nadie mirando. La sesión suplantada caduca sola, lleva un banner que no se
+  puede quitar y queda registrada en `impersonation_sessions` con el motivo — "lo
+  acordamos por WhatsApp" es un dato del negocio, no una excusa.
 - **Snapshots en `order_items`**: se copia nombre y precio al momento de la compra, para que cambios posteriores de precio no alteren órdenes viejas. El subtotal de cada `order_suppliers` es un snapshot más: es lo que se le liquida a ese proveedor, no una suma que se recalcula en cada lectura.
 - **Tres ejes, no uno.** El **pago** es del pedido entero; la **aceptación** y la
   **entrega** son de cada proveedor. Los tres avanzan por su cuenta y ninguno vive
@@ -152,13 +171,33 @@ Decisiones clave:
   en el checkout, que un proveedor descubra que no tiene es la excepción y no la
   regla —es un descuadre físico, no una sorpresa de disponibilidad—: para eso está
   ajustar la cantidad de la línea o rechazar la parte entera.
-- **Si una parte se cae antes de cobrar, el total se reescribe.** El monto exacto
-  es la referencia del Zelle, así que no puede mentir: se recalcula `orders.total`
-  sobre las partes vivas y se reemiten las instrucciones. Después de `PAID` ya no se
-  reescribe nada — una parte que se cae ahí es una devolución, y se hace a mano
-  como todo lo demás en esta fase.
+- **Si una parte se cae, decide el comprador — no el sistema.** Que un proveedor
+  rechace no puede reescribir el pedido por su cuenta: el comprador quizá quería
+  esos paneles precisamente de ese vendedor, y quedarse con el resto puede no
+  tener ningún sentido. Se le avisa de **quién** no pudo y **por qué**, con el total
+  que quedaría, y elige entre tres: **seguir** con los que aceptaron, **editar**
+  el pedido, o **cancelarlo** entero. Mientras no elija, el pedido no avanza.
+- **Lo que el comprador aceptó pagar se guarda** (`orders.acknowledged_total_usd`).
+  De ahí sale todo lo demás sin inventar estados: si el total vivo se separa del
+  aceptado, es que hay una decisión pendiente, y las instrucciones Zelle se congelan
+  hasta que la tome. No hace falta un `NEEDS_REVIEW` en `orders.status` —que volvería
+  a mezclar ejes— porque la pregunta "¿tiene algo que decidir?" es una comparación.
+  _Y es lo único que mantiene honesto el monto exacto del Zelle, que es la referencia
+  con la que se concilia: nadie ve nunca una cifra que no haya aceptado._
+- **Después de `PAID` ya no se decide, se devuelve.** Una parte que se cae con el
+  dinero dentro es una devolución, y en esta fase se hace a mano como todo lo demás.
+- **Esa decisión también se puede tomar en su nombre.** Es el caso de uso exacto de
+  la suplantación: el comprador contesta por WhatsApp "dale, mándame lo que haya" y
+  el admin lo deja escrito dentro, firmado como él mismo actuando por el comprador.
 - **Estados de pago**: `PENDING → REPORTED → CONFIRMED / REJECTED`.
-- `payments.method` ya contempla `SUBY` para que la Fase 2 no requiera migración.
+- **`payments.method` ya contempla `QVAPAY` y `SUBY`**, que son los medios de
+  destino, para que llegar a ellos no requiera migración. Lo mismo con el nombre de
+  la columna de la referencia: `reference` y no `zelle_reference`, porque las tres
+  pasarelas tienen una y sería absurdo guardar la de QvaPay en una columna que dice
+  Zelle. Lo que **sí** cambiará al llegar la integración automática es quién mueve
+  el estado: hoy `REPORTED → CONFIRMED` lo hace el admin a mano tras mirar el banco;
+  con QvaPay o suby lo hará un webhook. Por eso `payments` ya guarda quién confirmó
+  (`confirmed_by`, nulo cuando confirme la máquina).
 
 ## Flujo de compra Zelle (el corazón de la Fase 1)
 
@@ -172,6 +211,10 @@ Decisiones clave:
    teléfono en su nombre). El comprador ve el marcador en su pedido —"2 de 3
    confirmados"—, no una caja negra. La parte que no se confirme dentro de su plazo
    se cae sola y libera su reserva; las demás siguen.
+4b. Si alguna se cayó, **el pedido se para y pregunta**: quién no pudo, por qué, y
+   cuánto quedaría. El comprador sigue con el resto, edita o cancela — y hasta que
+   conteste no se le pide dinero. Al seguir, se guarda el nuevo total aceptado y se
+   reemiten las instrucciones con esa cifra.
 5. Usuario reporta el pago: número de referencia Zelle + captura del comprobante (opcional).
    La orden pasa a `PAYMENT_REPORTED`.
 6. Tú verificas el Zelle en tu banco y desde el panel admin confirmas o rechazas.
@@ -277,9 +320,20 @@ Decisiones clave:
       lo que hay y no añadir una rama. **Va después de la Etapa 5.5.**
 - [ ] Filtro "incluir lo que llega pronto" en la barra del catálogo, apagado por
       defecto: lo primero que se ve es lo que se puede comprar hoy.
+- [ ] **Un kit también llega pronto.** Su disponibilidad es derivada, así que la
+      futura también lo es: un kit está "por volver" cuando lo único que le falta
+      son piezas con reposición anunciada, y su ventana es la **más tardía** de
+      ellas —llega cuando llega la última—. Si a una pieza que falta no le espera
+      nada, el kit no promete nada: sale agotado y punto.
+- [ ] **El precio futuro no se enseña en el catálogo.** `price_schedules` lo conoce
+      y el proveedor lo programa, pero anunciar "baja a 180 el día 15" mata la venta
+      de hoy y convierte una previsión en una promesa de precio. Se ve en el portal
+      del proveedor y en el admin; el comprador ve el precio de hoy y ya. _Si algún
+      día se quiere enseñar, que sea como una campaña con fecha de inicio y no como
+      un efecto secundario de tener la tabla._
 - [x] SEO básico: metadata, slugs limpios, Open Graph.
 
-### Etapa 5.5 — Inventario y precios en el tiempo (2–3 días)
+### Etapa 5.5 — Inventario, precios en el tiempo y suplantación (3–4 días)
 
 Va **antes** de la Etapa 6 por el mismo motivo que los dos cambios de schema
 anteriores: la validación de stock y el "precio releído" del checkout todavía no
@@ -308,6 +362,19 @@ schedules. Al revés habría que reescribirlos y migrar pedidos reales. Ver
       ventana. Idempotente — se puede correr dos veces sin descuadrar nada.
 - [ ] Admin mínimo: ajustar stock con motivo, anunciar y resolver una reposición,
       programar un precio. El histórico rico y el panel de fiabilidad son Etapa 8.
+- [ ] **La suplantación, entera, entra aquí** — no en la Etapa 10. El portal es que
+      el proveedor entre por su cuenta; esto es que tú puedas actuar por él, y lo
+      necesitas desde el primer día porque en la Fase 1 el inventario ajeno lo
+      mueves tú. Es la misma pieza que después usarán la confirmación de partes
+      (Etapa 7) y la decisión del comprador ante un rechazo.
+      - `impersonatedUserId` en la sesión; el usuario **efectivo** es el suplantado
+        o tú, y `actingSupplierId` sale de cruzar el efectivo con `supplier_users`.
+      - El botón y la lista de usuarios en el admin —proveedores, compradores,
+        cualquiera—, con banner permanente mientras dure y salida a un clic.
+      - `impersonation_sessions` con motivo y caducidad, y la columna del actor real
+        en todo lo que se escriba (empezando por el libro mayor de stock).
+      - Las prohibiciones, que son la mitad del trabajo: ni contraseña, ni email, ni
+        borrar cuenta, ni encadenar otra, ni confirmar un pago.
 
 ### Etapa 6 — Carrito y checkout (2–3 días)
 - [x] Carrito client-side (Zustand) persistido en localStorage.
@@ -377,9 +444,16 @@ schedules. Al revés habría que reescribirlos y migrar pedidos reales. Ver
 - [ ] La puerta: confirmar el pago exige que ninguna parte viva siga en `PENDING`.
       La cola de pagos lo enseña en la fila —"1 proveedor sin confirmar"— y la
       Action lo comprueba; no basta con esconder el botón.
-- [ ] Plazo de confirmación en el cron: la parte vencida pasa a `CANCELLED`, libera
-      su reserva y **reescribe el total del pedido** si todavía no se ha cobrado,
-      con instrucciones Zelle nuevas. El pedido sin ninguna parte viva se cancela.
+- [ ] Plazo de confirmación en el cron: la parte vencida pasa a `CANCELLED` y libera
+      su reserva. El pedido sin ninguna parte viva se cancela solo; con alguna viva,
+      pasa a esperar al comprador (siguiente item).
+- [ ] **La pantalla de decisión del comprador**, que es lo que se lleva el pedido
+      cuando alguien rechaza: quién no pudo y por qué, qué queda, cuánto costaría, y
+      tres salidas —seguir, editar o cancelar—. Mientras el total vivo no coincida
+      con `acknowledged_total_usd`, las instrucciones de pago se congelan y el admin
+      no puede confirmar nada. Al seguir se guarda el total nuevo y se reemiten.
+      El admin puede tomarla en nombre del comprador (suplantación), que es como se
+      va a resolver la mayoría por WhatsApp.
 - [ ] Emails con Resend: orden creada (con instrucciones), parte confirmada o caída
       —con el total nuevo si cambió—, pago recibido/en revisión, pago confirmado,
       pago rechazado. Y al proveedor: "tienes una parte por confirmar", que es lo
@@ -402,8 +476,10 @@ schedules. Al revés habría que reescribirlos y migrar pedidos reales. Ver
 - [ ] Dominio propio en Vercel, rama `prod` de Neon, variables de producción.
 - [ ] Prueba end-to-end real: registrar usuario → comprar → reportar Zelle → confirmar como admin → recibir email.
 
-**Total estimado: ~3 semanas** de trabajo enfocado hasta aquí. La Etapa 5.5 sumó
-unos días, y son los que evitan reescribir el checkout con pedidos reales encima.
+**Total estimado: ~3 semanas y media** de trabajo enfocado hasta aquí. La Etapa 5.5
+es la que sumó, y son los días que evitan reescribir el checkout con pedidos reales
+encima. Las Etapas 9, 10 y 11 quedan fuera de esa cuenta: la fase sale a producción
+sin ellas.
 
 ### Etapa 9 — Servicio post-venta sobre equipo ya comprado (2 días)
 
@@ -442,11 +518,11 @@ del marketplace a la vez. Aquí eso deja de serlo.
 
 - [ ] Rol `SUPPLIER` en `user_role` y tabla `supplier_users`. Un negocio puede tener
       dos personas sin migrar nada, y la forma es la que ya usa `supplier_zones`.
-- [ ] `actingSupplierId` en la sesión, con las dos puertas: para un `SUPPLIER` sale
-      de `supplier_users` y **nunca** de la petición; para un `ADMIN` es el proveedor
-      que haya elegido, y puede cambiarlo sin salirse de su propia sesión.
-      `requireSupplierScope()` en `lib/dal.ts` es el único sitio que lo resuelve, y
-      `proxy.ts` filtra `/portal/**` por el rol de la cookie como primer corte.
+- [ ] La segunda puerta de `requireSupplierScope()`: hasta ahora el ámbito solo
+      podía venir de un admin suplantando (Etapa 5.5); ahora también de un
+      `SUPPLIER` en su propia sesión, y ahí sale de `supplier_users` y **nunca** de
+      la petición. `proxy.ts` filtra `/portal/**` por el rol de la cookie como primer
+      corte, y la página lo vuelve a verificar por el DAL.
 - [ ] **Repasar todas las Server Actions que ya existen.** Hoy `products.ts`,
       `kits.ts`, `services.ts` y `service-categories.ts` reciben el `supplierId` del
       formulario y se fían, porque el único que llega hasta ahí es el admin. Con un
@@ -462,6 +538,29 @@ del marketplace a la vez. Aquí eso deja de serlo.
       ahí. Lo que hasta ahora hacía el admin por teléfono en su nombre.
 - [ ] Sus liquidaciones: el `group by` sobre `order_suppliers` de la Etapa 7, pero
       recortado a los suyos. La fila con lo que le toca existe desde la Fase 1.
+
+### Etapa 11 — Pago automático: QvaPay y suby.fi (2–3 días)
+
+Los medios principales del producto. Están fuera de la Fase 1 porque faltan la
+integración y los permisos, no porque sean secundarios: el Zelle manual es el
+puente que permite cobrar mientras tanto. Cuando esta etapa entre, el Zelle se
+queda como alternativa, no se retira.
+
+- [ ] `payments.method` ya tiene los tres valores desde la Fase 1, así que esto no
+      es una migración de datos: es un flujo de checkout nuevo por pasarela.
+- [ ] **El cambio de fondo es quién mueve el estado.** Hoy `REPORTED → CONFIRMED` lo
+      hace el admin tras mirar el banco; aquí lo hace un webhook. Todo lo que la
+      Etapa 7 colgó de esa transición —consumir las reservas, escribir los `SALE`,
+      mandar el email— tiene que dispararse igual venga de donde venga, así que vive
+      en un service y no dentro de la Action del admin.
+- [ ] Webhook idempotente y verificado por firma: una pasarela reintenta, y cobrar
+      dos veces el mismo pedido o consumir dos veces la misma reserva no es una
+      opción. La clave de idempotencia es el pago, no la petición.
+- [ ] Conciliación: qué pasa si el webhook no llega nunca. El admin tiene que poder
+      confirmar a mano igual que hoy, y esa puerta no se cierra en esta etapa.
+- [ ] La puerta de la Etapa 7 sigue en pie: no se marca `PAID` con partes vivas sin
+      confirmar. Con pago automático esto se vuelve **más** importante, no menos —
+      antes el dinero esperaba a que tú miraras el banco; ahora entra solo.
 
 ## Pedidos multi-proveedor y servicios sobre equipo ajeno (cambio en curso)
 
@@ -703,16 +802,56 @@ referencia con la que se concilia, una parte que cae antes de cobrar reescribe
 `orders.total` y reemite instrucciones; después de `PAID` no se reescribe nada,
 porque ahí ya es una devolución.
 
-Quién puede confirmar sale del mismo `actingSupplierId` del paso anterior, sin una
+Quién puede confirmar sale del mismo `actingSupplierId` del paso siguiente, sin una
 línea de permisos nueva: en la Fase 1 el admin lo hace en nombre del proveedor
 —por teléfono, como se verifica el Zelle— y con el portal lo hace el proveedor.
 El registro guarda siempre quién lo hizo de verdad.
+
+Y lo que **no** hace el sistema es decidir por el comprador. Un rechazo no reescribe
+el pedido: lo para y pregunta. `orders.acknowledged_total_usd` guarda la última
+cifra que el comprador aceptó pagar, y con eso "¿hay algo que decidir?" es una
+comparación —total vivo contra aceptado— en vez de un estado nuevo que habría que
+mantener sincronizado. Mientras difieran, las instrucciones de pago se congelan y
+el admin no puede confirmar. Seguir con el resto, editar o cancelar son las tres
+salidas, y cualquiera de ellas reescribe el aceptado.
+
+### Paso 5 — Actuar en nombre de otro
+
+Buena parte de este negocio se cierra por teléfono o WhatsApp, y después hay que
+dejarlo escrito dentro de la aplicación. Suplantar es la pieza que lo permite sin
+mentir en el registro.
+
+La sesión lleva dos identidades: la **real** (`userId`, que no cambia nunca ni
+siquiera suplantando) y la **efectiva** (`impersonatedUserId ?? userId`). Todo lo
+que la aplicación lee y escribe usa la efectiva, así que el código de una página no
+sabe ni le importa si detrás hay un admin — no hay una rama "modo admin" que se
+desincronice con la de verdad. Lo que sí cambia es la firma: cada escritura guarda
+la real junto a la efectiva.
+
+`actingSupplierId` no es una pieza aparte, es una derivada: la efectiva cruzada
+contra `supplier_users`. Por eso el proveedor en su portal (Etapa 10) y el admin
+actuando por él recorren el mismo camino, y por eso el portal no es un panel
+paralelo que haya que mantener dos veces.
+
+Las prohibiciones son la mitad del diseño, no una lista de cortesía: contraseña,
+email, borrado de cuenta y encadenar otra suplantación quedan fuera porque son las
+que convierten "operar por alguien" en "quedarse con su cuenta". Y confirmar un
+pago queda fuera por separación de funciones: si el mismo actor crea el pedido y da
+el cobro por bueno, no queda nadie mirando. Todo ello con caducidad,
+`impersonation_sessions` con motivo, y un banner que no se puede quitar — el riesgo
+más tonto es olvidarse de que estás suplantando.
 
 ### Lo que hay que vigilar
 
 - **La parte huérfana.** Una que nadie confirma y nadie rechaza es la que se lleva
   el pedido por delante. El plazo no es un adorno: es lo único que garantiza que
   toda parte llega a un final.
+- **El pedido esperando una decisión que nadie toma.** El comprador tampoco
+  contesta siempre. Necesita su propio recordatorio y su propio vencimiento, o
+  cambiamos una parte colgada por un pedido colgado —con su stock reservado igual
+  de muerto—.
+- **La suplantación olvidada.** Un admin que se deja la sesión abierta actuando
+  como otro escribe cosas a su nombre sin darse cuenta. Caducidad y banner.
 - **Doble contabilidad.** `stock`/movimientos y `price_usd`/schedules son dos pares
   que pueden descuadrar. Se aceptan por lectura, no por comodidad, y a cambio las
   dos invariantes son queries que caben en un test.
@@ -734,7 +873,10 @@ El registro guarda siempre quién lo hizo de verdad.
   lo que aún no existe y una política de devolución para cuando la reposición no
   llega. Con el pago automático y un historial de `restocks` que diga qué proveedor
   cumple, la conversación es otra.
-- Integración de pago automático con suby.fi (todo a la cuenta central), reutilizando `payments.method = SUBY`.
+- El pago automático **ya no vive aquí**: es la Etapa 11, porque QvaPay y suby.fi
+  son los medios principales del producto y no un extra de la fase siguiente. Lo
+  que los mantiene fuera de la Fase 1 es que faltan integración y permisos, no que
+  sean opcionales.
 - Liquidaciones a proveedores registradas dentro del sistema: son columnas de
   estado sobre `order_suppliers` (pagada, cuándo, referencia), no una tabla
   nueva — la fila con el monto que le toca a cada uno ya existe desde la Fase 1.
