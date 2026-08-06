@@ -253,6 +253,24 @@ Definido en [`lib/db/schema.ts`](../lib/db/schema.ts). Entidades principales:
   compra; cuelgan de `order_suppliers` (no de `orders`), así que la línea sabe
   quién la entrega sin repetir la columna. `itemId` es una FK "blanda" a
   `products.id`, `kits.id` o `services.id` según `itemType`.
+- **stock_movements** — el libro mayor: solo se añade, y explica cada cambio del
+  saldo con su motivo y quién lo hizo. `products.stock` es el saldo y esto el
+  porqué, así que el histórico sale gratis. **Nada más escribe stock.**
+- **stock_reservations** — lo comprometido por un pedido sin cobrar, con
+  vencimiento. Cuelga de `order_suppliers`, así que cancelar la parte de un
+  proveedor devuelve solo su stock. **Vendible = `stock - reserved`.**
+- **restocks** — la reposición prometida. No toca el saldo y lleva **ventana**
+  (`eta_from`/`eta_to`) en vez de fecha: la incertidumbre es estructural, no una
+  nota al pie. Al llegar se resuelve **y** se escribe un `RESTOCK` con la
+  cantidad real — la distancia entre lo anunciado y lo llegado dice qué proveedor
+  cumple.
+- **stock_alerts** — "avísame cuando vuelva", que es lo que se ofrece en lugar de
+  la pre-orden: captura la demanda sin tocar dinero.
+- **price_schedules** — el precio como línea de tiempo, para productos, kits y
+  servicios. Filas pasadas: histórico; futuras: programado; el efectivo es el de
+  mayor `starts_at <= now()`. `price_usd` de cada tabla es una **caché** de ese
+  efectivo, y existe solo porque el listado ordena y filtra por rango sobre esa
+  columna indexada.
 - **payments** — pago por **Zelle** (MVP) o Suby.fi (futuro), con su propio ciclo
   de verificación manual por el admin. Uno por **orden**, no por proveedor:
   partir el Zelle sería peor para quien compra y peor para conciliar.
@@ -349,7 +367,30 @@ npm run db:migrate   # aplicar migraciones
 npm run db:push      # empujar el schema directo (solo prototipado local)
 npm run db:studio    # UI de Drizzle para inspeccionar la BD
 npm run db:seed      # cargar datos iniciales
+npm run check:inventory  # las invariantes del inventario, contra la BD apuntada
 ```
+
+### Las dos cachés del inventario, y cómo se comprueban
+
+`products.stock` y `price_usd` duplican información que vive en otra tabla
+(`stock_movements` y `price_schedules`). Es doble contabilidad y se acepta **por
+rendimiento de lectura**, no por comodidad: la tarjeta del catálogo necesita las
+dos por fila, y resolverlas con un lateral join sería pagar la temporalidad en la
+consulta más caliente del sitio.
+
+Lo que la hace segura es que descuadrar es **detectable**. Tres queries, una por
+invariante, en `npm run check:inventory`:
+
+```
+products.stock    = coalesce(sum(stock_movements.delta), 0)
+products.reserved = coalesce(sum(quantity de las reservas HELD), 0)
+price_usd         = el price_schedules de mayor starts_at <= now()
+```
+
+Se cumplen desde la migración `0007`, que además del schema trae el **backfill**
+—un `OPENING` por producto y una fila de precio por item—; sin él las tablas
+nuevas nacerían mintiendo sobre lo que ya existía. El seed hace lo mismo al
+final, para que una base recién sembrada también las cumpla.
 
 Variables de entorno (ver [`.env.example`](../.env.example)): `DATABASE_URL`
 (Neon) y `SESSION_SECRET`.

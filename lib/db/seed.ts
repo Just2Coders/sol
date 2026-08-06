@@ -314,6 +314,58 @@ async function main() {
       : "✓ Los items del catálogo ya tienen fotos, sin cambios",
   );
 
+  // ── Libro mayor y línea de precios ──
+  // Lo mismo que hizo el backfill de la migración `0007`, pero para lo que nazca
+  // después: una base recién sembrada tiene que cumplir las dos invariantes desde
+  // el primer minuto, o `scripts/check-inventory-invariants.ts` sale en rojo.
+  //
+  // Va al final y fuera de cualquier `if` a propósito: recoge lo que haya, lo
+  // acabe de crear este seed o estuviera de antes. Los `not exists` lo hacen
+  // repetible.
+  const opened = await db.execute(sql`
+    insert into stock_movements (product_id, delta, reason, note)
+    select p.id, p.stock, 'OPENING'::stock_movement_reason,
+           'Saldo de apertura al crear el libro mayor'
+      from products p
+     where not exists (
+       select 1 from stock_movements m
+        where m.product_id = p.id and m.reason = 'OPENING'
+     )
+    returning id
+  `);
+  console.log(
+    opened.rows.length > 0
+      ? `✓ Saldo de apertura escrito para ${opened.rows.length} producto(s)`
+      : "✓ Todos los productos ya tienen saldo de apertura",
+  );
+
+  // El precio se fecha en el nacimiento del item, no en el de hoy: así la línea
+  // de tiempo cubre toda su vida sin un hueco en el que no había precio.
+  let priced = 0;
+  for (const [kind, table] of [
+    ["PRODUCT", products],
+    ["KIT", kits],
+    ["SERVICE", services],
+  ] as const) {
+    const inserted = await db.execute(sql`
+      insert into price_schedules (target_type, target_id, price_usd, starts_at, note)
+      select ${kind}::priceable_type, t.id, t.price_usd, t.created_at,
+             'Precio vigente al crear la línea de tiempo'
+        from ${table} t
+       where not exists (
+         select 1 from price_schedules s
+          where s.target_type = ${kind}::priceable_type and s.target_id = t.id
+       )
+      returning id
+    `);
+    priced += inserted.rows.length;
+  }
+  console.log(
+    priced > 0
+      ? `✓ Precio inicial escrito para ${priced} item(s)`
+      : "✓ Todos los items ya tienen su línea de precios",
+  );
+
   console.log("\nSeed completado.");
 }
 
