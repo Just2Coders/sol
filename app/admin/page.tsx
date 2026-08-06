@@ -21,6 +21,11 @@ const SECTIONS = [
     description: "Datos de contacto, liquidación y zonas de cobertura.",
   },
   {
+    href: "/admin/supplier-leads",
+    title: "Solicitudes de alta",
+    description: "Quién ha pedido vender en Solaris desde /sell.",
+  },
+  {
     href: "/admin/products",
     title: "Productos",
     description: "Paneles, inversores y baterías: precio, stock y ficha técnica.",

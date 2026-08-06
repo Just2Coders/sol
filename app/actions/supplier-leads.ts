@@ -27,9 +27,12 @@ const leadSchema = z.object({
 
 /**
  * Guarda la solicitud de alta de `/sell`. Público — no hay `verifyAdmin`
- * aquí: cualquiera puede pedir vender en Solaris. El equipo revisa las
- * filas de `supplier_leads` a mano y las convierte en `suppliers` — ese
- * paso no tiene panel todavía.
+ * aquí: cualquiera puede pedir vender en Solaris.
+ *
+ * El equipo las lee en `/admin/supplier-leads` y las convierte en `suppliers`
+ * a mano desde `/admin/suppliers/new`: dar de alta es crear ficha, cobertura y
+ * datos de liquidación, así que no es un botón de "convertir" sino el
+ * formulario que ya existe.
  */
 export async function createSupplierLead(
   _state: SupplierLeadState,
