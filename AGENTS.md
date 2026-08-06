@@ -123,10 +123,32 @@ un MCP para buscar iconos sin salir del editor, declarado en
   borres, complétala.
 - **No se mergea con el CI en rojo.** Lint, typecheck y build deben pasar.
 
+## Tests
+
+Vitest, y cubren la **lógica pura** de `lib/`: las reglas del dominio escritas
+como funciones que reciben datos y devuelven datos, sin tocar la base ni
+`next/headers`. El fichero vive al lado del que prueba (`availability.ts` →
+`availability.test.ts`).
+
+- **La regla que decide algo va en una función pura, y esa función lleva tests.**
+  Qué es vendible, qué precio rige hoy, hasta cuándo aguanta una reserva: si la
+  respuesta se puede equivocar, se prueba. Lo que queda alrededor —leer de la
+  base, revalidar, redirigir— es plomería y se mantiene fina a propósito.
+- **Un test por caso, y el nombre dice el caso.** No `describe("casos raros")`
+  con cinco `expect` dentro: cuando falle, el nombre tiene que decir qué se
+  rompió sin abrir el fichero.
+- **El caso límite es el que importa.** El día exacto en que vence una ventana,
+  el kit sin piezas, las reservas que superan al stock. Lo que funciona con
+  datos bonitos no hacía falta probarlo.
+- Lo que habla con Postgres no se prueba con mocks: se comprueba contra la base
+  con `npm run check:inventory`, que verifica las invariantes del inventario.
+  Una base de pruebas propia es una decisión que aún no se ha tomado.
+
 ## Antes de dar por terminado un cambio
 
 ```bash
 npm run lint
 npx --no-install tsc --noEmit
+npm test
 ```
-Ambos deben pasar sin errores.
+Los tres deben pasar sin errores.
