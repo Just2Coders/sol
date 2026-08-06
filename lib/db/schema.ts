@@ -165,6 +165,23 @@ export const supplierZones = pgTable(
   ],
 );
 
+/**
+ * La solicitud de alta que deja quien quiere vender en Solaris, desde `/sell`.
+ *
+ * No es un `supplier`: nace sin revisar, y el alta la hace el equipo a mano —
+ * ver la letra pequeña de esa página. `province` va en texto libre y no como
+ * FK a `zones` porque las provincias reales de Cuba todavía no están
+ * sembradas ahí (hoy `zones` solo tiene el árbol de ejemplo del seed); el día
+ * que lo estén, esta columna puede migrar a `zoneId` sin tocar el resto.
+ */
+export const supplierLeads = pgTable("supplier_leads", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  business: text("business").notNull(),
+  province: text("province").notNull(),
+  contact: text("contact").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 // ─── Productos y kits ────────────────────────────────────────────────────────
 
 export const products = pgTable(
