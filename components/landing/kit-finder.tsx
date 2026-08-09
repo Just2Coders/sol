@@ -82,7 +82,7 @@ export function KitFinder({ className }: { className?: string }) {
                 aria-controls={panelId}
                 onClick={() => select(kit.slug)}
                 className={cn(
-                  "text-label tracking-mono-sm border-foreground ease-standard focus-visible:ring-ring border px-4 py-2.5 font-mono uppercase transition-colors duration-base focus-visible:ring-2 focus-visible:outline-none",
+                  "text-label tracking-mono-sm border-foreground ease-standard focus-visible:ring-ring active:scale-95 active:duration-fast border px-4 py-2.5 font-mono uppercase transition-[color,background-color,transform] duration-base focus-visible:ring-2 focus-visible:outline-none",
                   active
                     ? "bg-foreground text-background"
                     : "text-foreground hover:bg-muted",

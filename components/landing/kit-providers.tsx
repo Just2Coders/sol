@@ -1,14 +1,15 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
+import { useEffect, useState } from "react";
 import { ArrowRight } from "reicon-react";
 
 import type { KitOffer } from "@/lib/kits/offers";
-import { formatUsd } from "@/lib/utils";
+import { cn, formatUsd } from "@/lib/utils";
 
 import { FlatCta } from "./flat-cta";
 import { useKitSelection } from "./kit-selection";
-import { PhotoHole } from "./photo-hole";
 import { SectionHeading } from "./section-heading";
 
 /**
@@ -33,6 +34,28 @@ import { SectionHeading } from "./section-heading";
 export function KitProviders() {
   const { kit, offers, panelId } = useKitSelection();
 
+  // Al cambiar de kit el contenido de las tres fichas se reemplaza entero —
+  // foto, nombre, precio— sin ningún puente. `fading` se pone a `true` en el
+  // mismo render en que cambia `kit.slug` (no en un efecto posterior, y no
+  // con un ref: React exige que ajustar estado durante el render se haga con
+  // estado, no con refs — ver "Adjusting state when a prop changes" en la
+  // documentación de React), así que React pinta ya el kit nuevo con la
+  // grilla en opacity: 0 y nunca llega a pintarse a opacidad plena para luego
+  // apagarse. El efecto solo trae la opacidad de vuelta un fotograma después,
+  // y ahí sí transiciona.
+  const [lastSlug, setLastSlug] = useState(kit.slug);
+  const [fading, setFading] = useState(false);
+  if (lastSlug !== kit.slug) {
+    setLastSlug(kit.slug);
+    if (!fading) setFading(true);
+  }
+
+  useEffect(() => {
+    if (!fading) return;
+    const raf = requestAnimationFrame(() => setFading(false));
+    return () => cancelAnimationFrame(raf);
+  }, [fading]);
+
   return (
     <section
       id={panelId}
@@ -56,7 +79,12 @@ export function KitProviders() {
         }
       />
 
-      <ul className="mt-14 grid grid-cols-1 gap-6 md:grid-cols-3">
+      <ul
+        className={cn(
+          "ease-standard mt-14 grid grid-cols-1 gap-6 transition-opacity duration-base motion-reduce:transition-none md:grid-cols-3",
+          fading && "opacity-0",
+        )}
+      >
         {offers.map((offer) => (
           <li key={offer.supplierSlug}>
             <OfferCard offer={offer} kitName={kit.name} />
@@ -71,9 +99,15 @@ function OfferCard({ offer, kitName }: { offer: KitOffer; kitName: string }) {
   const href = `/catalog?type=kit&supplier=${offer.supplierSlug}`;
 
   return (
-    <article className="flex h-full flex-col">
-      <div className="relative">
-        <PhotoHole label={offer.photo} className="h-75" />
+    <article className="group flex h-full flex-col">
+      <div className="relative h-75 overflow-hidden">
+        <Image
+          src={offer.photoUrl}
+          alt={offer.photo}
+          fill
+          sizes="(min-width: 768px) 33vw, 100vw"
+          className="ease-standard object-cover transition-transform duration-slow group-hover:scale-105"
+        />
         {offer.badge && (
           <p className="bg-primary-loud text-primary-loud-foreground text-micro absolute top-4 left-4 px-2.5 py-1.5 font-mono uppercase">
             {offer.badge}
@@ -104,7 +138,10 @@ function OfferCard({ offer, kitName }: { offer: KitOffer; kitName: string }) {
         className="text-label tracking-mono-sm text-primary-loud hover:text-primary-loud-hover ease-standard mt-auto inline-flex items-center gap-2 pt-3.5 font-mono uppercase transition-colors duration-base"
       >
         Ver esta oferta
-        <ArrowRight aria-hidden className="size-4" />
+        <ArrowRight
+          aria-hidden
+          className="ease-standard size-4 transition-transform duration-base group-hover:translate-x-0.5"
+        />
       </Link>
     </article>
   );

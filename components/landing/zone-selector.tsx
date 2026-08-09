@@ -1,5 +1,6 @@
 import { getProvinceCoverage } from "@/lib/zones/coverage";
 import { CubaMap } from "./cuba-map";
+import { Reveal } from "./reveal";
 
 /**
  * "¿Llegamos a tu provincia?" — el filtro central del producto, con el peso que
@@ -15,7 +16,7 @@ export async function ZoneSelector() {
 
   return (
     <section className="px-gutter py-section-md">
-      <div className="max-w-[52ch]">
+      <Reveal className="max-w-[52ch]">
         <h2 className="text-foreground text-display-2">
           ¿Llegamos a tu provincia?
         </h2>
@@ -23,7 +24,7 @@ export async function ZoneSelector() {
           Cada proveedor instala solo donde tiene equipo. Marca tu provincia y
           verás quién puede llegar hasta tu casa.
         </p>
-      </div>
+      </Reveal>
 
       <div className="mt-12">
         <CubaMap coverage={coverage} />
