@@ -121,9 +121,19 @@ módulo en vez de una query con banderas:
   todo, activo o no.
 - `lib/catalog/queries.ts` sirve al **catálogo público**: solo items activos de
   proveedores activos, filtrados por la zona donde el visitante instala, y con
-  kits y productos unificados en un mismo tipo (`CatalogItem`) para que la
-  grilla no sepa de qué tabla viene cada tarjeta. Nunca expone datos internos
-  del proveedor (`payoutInfo`, teléfono, notas).
+  kits, productos y servicios unificados en un mismo tipo (`CatalogItem`) para
+  que la grilla no sepa de qué tabla viene cada tarjeta. Nunca expone datos
+  internos del proveedor (`payoutInfo`, teléfono, notas).
+
+  El listado son **tres** ramas de un `UNION ALL` con la misma forma de fila, y
+  cada columna que solo tiene una rama viaja neutra en las otras (`null` para la
+  categoría y la unidad de obra fuera de un servicio). Ordenar, cortar y paginar
+  lo hace Postgres sobre la unión, no Node.
+
+  De los servicios **solo se listan los `ANY`**, y es la única diferencia
+  operativa entre `ANY` y `PLATFORM`: los dos aceptan equipo ajeno, pero solo el
+  primero se contrata sin traerlo. Anunciar en la grilla uno que necesita su
+  equipo sería mandar a la gente a una ficha que no le va a vender nada.
 
 ### La ficha son dos columnas y tres regiones que no se empujan
 
@@ -279,9 +289,12 @@ Definido en [`lib/db/schema.ts`](../lib/db/schema.ts). Entidades principales:
 > [`PLAN.md`](../PLAN.md) y depende de que existan pedidos pagados, así que se
 > diseña cuando los haya.
 >
-> Y falta el otro lado del alcance: hoy nada impide contratar suelto un servicio
-> `OWN` o `PLATFORM` desde su ficha. La regla está decidida (Etapa 5) pero vive
-> en pantallas que aún no existen — el listado del catálogo y el checkout.
+> El otro lado del alcance ya está puesto en el catálogo: un servicio `OWN` o
+> `PLATFORM` no se lista suelto, y su ficha solo enseña el bloque de compra si el
+> carrito trae el equipo que le toca (`cartCoversService`, en el módulo puro para
+> que el checkout revalide con la misma función). Lo que **falta** es la segunda
+> puerta: con «Mis equipos» (Etapa 9) el equipo podrá venir además de un pedido
+> pagado anterior, y eso sí hay que consultarlo.
 
 ### Convenciones del modelo
 

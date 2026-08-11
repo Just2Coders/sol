@@ -22,12 +22,12 @@ import { getZoneFilterOptions } from "@/lib/zones/queries";
 export const metadata: Metadata = {
   title: "Catálogo — Solaris",
   description:
-    "Kits solares y equipos sueltos de proveedores verificados, filtrados por la provincia donde vas a instalar.",
+    "Kits solares, equipos sueltos e instalación de proveedores verificados, filtrados por la provincia donde vas a instalar.",
   alternates: { canonical: "/catalog" },
   openGraph: {
     title: "Catálogo — Solaris",
     description:
-      "Kits solares y equipos sueltos de proveedores verificados, filtrados por la provincia donde vas a instalar.",
+      "Kits solares, equipos sueltos e instalación de proveedores verificados, filtrados por la provincia donde vas a instalar.",
     url: "/catalog",
     type: "website",
   },
@@ -246,7 +246,7 @@ function EmptyState({
     return (
       <Message
         title="Todavía no hay nada publicado."
-        body="Los proveedores están cargando sus kits y equipos. Vuelve en unos días."
+        body="Los proveedores están cargando sus kits, equipos e instalaciones. Vuelve en unos días."
       />
     );
   }

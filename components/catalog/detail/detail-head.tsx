@@ -39,6 +39,7 @@ export function CatalogDetailHead({
   savingsUsd,
   item,
   note,
+  purchase,
   installations,
 }: {
   /** Qué es, en minúscula mono: "kit", "producto", "instalación · paneles". */
@@ -54,6 +55,12 @@ export function CatalogDetailHead({
   item: CartItem;
   /** Aclaración propia del tipo: cómo se cobra un servicio, por ejemplo. */
   note?: React.ReactNode;
+  /**
+   * Sustituye el bloque de compra por otro. Lo usa la ficha de un servicio, que
+   * a veces no vende: si trabaja solo sobre cierto equipo, sin ese equipo
+   * delante explica en vez de ofrecer un botón (`ServicePurchaseBlock`).
+   */
+  purchase?: React.ReactNode;
   /** La instalación que se puede contratar junto al equipo; `CatalogInstallations`. */
   installations?: React.ReactNode;
 }) {
@@ -87,7 +94,7 @@ export function CatalogDetailHead({
       </div>
 
       <div className="mt-7">
-        <CatalogPurchaseBlock item={item} note={note} />
+        {purchase ?? <CatalogPurchaseBlock item={item} note={note} />}
       </div>
 
       {installations}
