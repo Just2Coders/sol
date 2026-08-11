@@ -60,6 +60,15 @@ lib/                    Lógica de servidor reutilizable (NO específica de una 
     filters.ts          Los filtros del catálogo tal como viven en la URL (puro)
     photos.ts           La columna de fotos de una ficha y sus anclas (puro)
     queries.ts          Lecturas del catálogo público (solo activo, por zona)
+  inventory/
+    availability.ts     Qué se puede vender: stock − reserved, y la derivada
+                        de un kit a partir de sus piezas (puro)
+    holds.ts            Los relojes de una reserva: cuánto retiene el
+                        proveedor y de ahí el resto (puro)
+    restocks.ts         La reposición prometida y su ventana (puro)
+  pricing/
+    effective.ts        El precio efectivo, el programado y qué hay que
+                        promover (puro)
   products/queries.ts   Lecturas de productos (panel admin)
   kits/queries.ts       Lecturas de kits con sus componentes (panel admin)
   services/
@@ -401,6 +410,23 @@ npm run db:studio    # UI de Drizzle para inspeccionar la BD
 npm run db:seed      # cargar datos iniciales
 npm run check:inventory  # las invariantes del inventario, contra la BD apuntada
 ```
+
+### Las reglas del inventario viven en funciones puras
+
+`lib/inventory/` y `lib/pricing/` no importan `db` ni llevan `server-only`: son
+las reglas del dominio, no su lectura. Lo hacen a propósito, y por dos motivos
+que se refuerzan.
+
+El primero es que **la misma pregunta se hace desde tres sitios**. "¿Cuánto queda
+de esto?" la responden el listado, la ficha y el checkout; "¿qué precio rige?",
+la tarjeta y la Action que cobra. Escrita como función pura se escribe una vez y
+los tres la importan — igual que ya pasaba con `lib/catalog/filters.ts` y
+`lib/cart/lines.ts`.
+
+El segundo es que **son las que se pueden equivocar**, y en puro cuestan un test
+por caso: el día exacto en que vence una ventana, el kit sin piezas, las reservas
+que superan al stock. Lo que queda alrededor —leer, escribir, revalidar— es
+plomería, y se mantiene fina para que no haya nada que probar en ella.
 
 ### Las dos cachés del inventario, y cómo se comprueban
 
