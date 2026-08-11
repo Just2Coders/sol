@@ -70,7 +70,7 @@ export default async function ProductPage({ params }: ProductPageProps) {
             image: product.images[0] ?? null,
             supplierSlug: product.supplier.slug,
             supplierName: product.supplier.name,
-            stock: product.stock,
+            stock: product.available,
           }}
           installations={
             <CatalogInstallations

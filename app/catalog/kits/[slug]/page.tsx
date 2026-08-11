@@ -72,8 +72,9 @@ export default async function KitPage({ params }: KitPageProps) {
             image: kit.images[0] ?? null,
             supplierSlug: kit.supplier.slug,
             supplierName: kit.supplier.name,
-            // Un kit no lleva stock propio: se arma con lo que haya.
-            stock: null,
+            // Un kit no lleva stock propio, pero sí un tope: no se pueden
+            // pedir más de los que dan sus piezas más escasas.
+            stock: kit.available,
           }}
           installations={
             <CatalogInstallations

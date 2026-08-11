@@ -449,6 +449,14 @@ products.reserved = coalesce(sum(quantity de las reservas HELD), 0)
 price_usd         = el price_schedules de mayor starts_at <= now()
 ```
 
+**La misma regla, escrita dos veces y a propósito.** Qué se puede vender está en
+`lib/inventory/availability.ts` (puro, con tests) y también en SQL dentro de
+`lib/catalog/queries.ts`. No es duplicación por descuido: las **fichas** cargan
+las piezas de todos modos y usan la función; el **listado** no puede —traerse los
+componentes de cada kit a Node para marcar una tarjeta sería una consulta por
+fila—, así que allí la derivada la calcula Postgres. Si una cambia, cambian las
+dos, y hay un ejercicio contra la base de dev que comprueba que coinciden.
+
 **El saldo se recalcula, no se incrementa.** `lib/inventory/service.ts` escribe
 la fila del libro y después pone `products.stock` igual a la suma de su libro —
 no `stock + delta`. La diferencia es lo que hace que un fallo a medias sea

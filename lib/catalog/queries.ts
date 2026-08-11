@@ -27,6 +27,7 @@ import {
   zones,
 } from "@/lib/db/schema";
 import { sumItemsUsd, type KitItemDetail } from "@/lib/kits/queries";
+import { availableUnits, kitAvailableUnits } from "@/lib/inventory/availability";
 import type { EquipmentScope } from "@/lib/services/enums";
 import {
   CATALOG_PAGE_SIZE,
@@ -252,7 +253,12 @@ type CatalogRow = {
   specs: Record<string, string>;
   componentCount: number;
   pieceCount: number;
-  stock: number;
+  /**
+   * Unidades que se pueden vender ahora mismo. En un producto es
+   * `stock - reserved`; en un kit, la derivada de sus piezas; en un servicio,
+   * siempre 1 — la mano de obra no se agota en un almacén.
+   */
+  available: number;
   /** Solo servicios: de qué trabajo es y cómo se cobra. `null` en el resto. */
   categoryName: string | null;
   unitLabel: string | null;
@@ -287,8 +293,22 @@ function kitQuery(filters: CatalogFilters, zone: ResolvedZone | null) {
       pieceCount: sql<number>`(select coalesce(sum(${kitItems.quantity}), 0)::int from ${kitItems} where ${kitItems.kitId} = ${kits.id})`.as(
         "piece_count",
       ),
-      // Un kit nunca se marca sin stock; la columna existe para cuadrar la unión.
-      stock: sql<number>`1`.as("stock"),
+      /**
+       * Un kit no tiene existencias propias: manda su pieza más escasa, contando
+       * ya lo comprometido. Es `kitAvailableUnits` de `lib/inventory` escrito en
+       * SQL — tiene que ser Postgres quien lo calcule, porque de esta columna
+       * depende marcar agotada la tarjeta sin traerse las piezas a Node.
+       *
+       * `min` sobre un conjunto vacío da NULL: un kit sin piezas no se puede
+       * armar, así que cae a 0 y no a "infinitas". Las piezas con cantidad 0 se
+       * excluyen — no aportan escasez y dividir por cero no significa nada.
+       */
+      available:
+        sql<number>`(select coalesce(min(floor((p.stock - p.reserved) / ${kitItems.quantity})), 0)::int
+                       from ${kitItems} join products p on p.id = ${kitItems.productId}
+                      where ${kitItems.kitId} = ${kits.id} and ${kitItems.quantity} > 0)`.as(
+          "available",
+        ),
       categoryName: sql<string | null>`null`.as("category_name"),
       unitLabel: sql<string | null>`null`.as("unit_label"),
     })
@@ -318,7 +338,10 @@ function productQuery(filters: CatalogFilters, zone: ResolvedZone | null) {
       specs: products.specs,
       componentCount: sql<number>`0`.as("component_count"),
       pieceCount: sql<number>`0`.as("piece_count"),
-      stock: products.stock,
+      // Lo comprometido por un pedido sin cobrar no está disponible para nadie más.
+      available: sql<number>`greatest(${products.stock} - ${products.reserved}, 0)`.as(
+        "available",
+      ),
       categoryName: sql<string | null>`null`.as("category_name"),
       unitLabel: sql<string | null>`null`.as("unit_label"),
     })
@@ -362,7 +385,7 @@ function serviceQuery(filters: CatalogFilters, zone: ResolvedZone | null) {
       componentCount: sql<number>`0`.as("component_count"),
       pieceCount: sql<number>`0`.as("piece_count"),
       // La mano de obra no se agota en un almacén.
-      stock: sql<number>`1`.as("stock"),
+      available: sql<number>`1`.as("available"),
       categoryName: sql<string | null>`${serviceCategories.name}`.as("category_name"),
       unitLabel: services.unitLabel,
     })
@@ -518,9 +541,10 @@ function toItem(row: CatalogRow): CatalogItem {
         : row.type === "SERVICE"
           ? serviceSummary(row.categoryName, row.unitLabel)
           : specsSummary(row.specs),
-    // Ni un kit ni un servicio se agotan: el kit se arma con lo que haya y la
-    // mano de obra no vive en un almacén.
-    outOfStock: row.type === "PRODUCT" && row.stock === 0,
+    // Ahora también un kit se agota: si a una de sus piezas no le quedan
+    // unidades, el kit no se puede armar y venderlo sería prometer una entrega
+    // imposible. Un servicio nunca — la mano de obra no vive en un almacén.
+    outOfStock: row.type !== "SERVICE" && row.available === 0,
   };
 }
 
@@ -694,7 +718,8 @@ export type CatalogProduct = {
   description: string | null;
   specs: Record<string, string>;
   priceUsd: number;
-  stock: number;
+  /** `stock - reserved`: lo que de verdad se puede pedir, no lo que hay. */
+  available: number;
   images: string[];
   supplier: CatalogItemSupplier;
   /** Instalaciones que este producto ofrece; vacío si no hay ninguna. */
@@ -722,6 +747,11 @@ export type CatalogKit = {
   /** Diferencia a favor del kit; 0 si comprarlo suelto sale igual o mejor. */
   savingsUsd: number;
   supplier: CatalogItemSupplier;
+  /**
+   * Cuántos kits se pueden armar con lo que hay. Derivada de sus piezas: manda
+   * la más escasa, contando ya lo comprometido por pedidos sin cobrar.
+   */
+  available: number;
   /** Instalaciones que este kit ofrece; vacío si no hay ninguna. */
   installations: CatalogInstallation[];
 };
@@ -786,7 +816,15 @@ export const getCatalogProduct = cache(async function getCatalogProduct(
   if (!row || !row.supplier.active) return null;
 
   const { supplier, ...product } = row;
-  return { ...product, installations, supplier: toCatalogSupplier(supplier) };
+  return {
+    ...product,
+    // Aquí se puede usar la función pura: la ficha ya trae la fila entera. El
+    // listado no —tendría que traerse las piezas de cada kit a Node—, así que
+    // allí la misma regla va escrita en SQL.
+    available: availableUnits(product),
+    installations,
+    supplier: toCatalogSupplier(supplier),
+  };
 });
 
 export const getCatalogKit = cache(async function getCatalogKit(
@@ -806,6 +844,10 @@ export const getCatalogKit = cache(async function getCatalogKit(
                 priceUsd: true,
                 active: true,
                 images: true,
+                // Para la derivada: un kit se arma con lo que quede de sus
+                // piezas, no con lo que figure en el almacén.
+                stock: true,
+                reserved: true,
               },
             },
           },
@@ -832,6 +874,15 @@ export const getCatalogKit = cache(async function getCatalogKit(
   const itemsTotalUsd = sumItemsUsd(detail);
   return {
     ...kit,
+    // La misma función que prueban los tests: aquí sí se pueden traer las
+    // piezas, porque la ficha las enseña de todos modos.
+    available: kitAvailableUnits(
+      items.map((item) => ({
+        stock: item.product.stock,
+        reserved: item.product.reserved,
+        quantity: item.quantity,
+      })),
+    ),
     items: detail,
     installations,
     itemsTotalUsd,
