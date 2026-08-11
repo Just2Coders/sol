@@ -29,7 +29,8 @@ app/                    Presentación: rutas, páginas (RSC) y Server Actions
   (auth)/               Grupo de rutas de autenticación (login, signup)
   actions/              Server Actions ("use server") — punto de entrada de mutaciones
   admin/                Panel de administración (rol ADMIN): zones, suppliers,
-                        products, kits, services, service-categories
+                        supplier-leads, products, kits, services,
+                        service-categories
   account/              Área del cliente autenticado
   catalog/              Catálogo público: listado y fichas de /products/[slug],
                         /kits/[slug] y /services/[slug]
@@ -71,6 +72,8 @@ lib/                    Lógica de servidor reutilizable (NO específica de una 
   zones/queries.ts      Lecturas de zonas (jerarquía estado → ciudad)
   zones/preference.ts   Cookie con la zona que eligió el visitante
   suppliers/queries.ts  Lecturas de proveedores (con zonas de cobertura)
+  supplier-leads/queries.ts
+                        Las solicitudes de alta que deja /sell, para el admin
   session.ts            Emisión/lectura/borrado de la cookie de sesión JWT
   dal.ts                Data Access Layer: verificación de sesión + lectura de usuario
   utils.ts              Helpers compartidos (cn, slugify, safeInternalPath)
