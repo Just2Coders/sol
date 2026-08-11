@@ -4,6 +4,7 @@ import {
   isoDay,
   isRestockVisible,
   kitRestockWindow,
+  phraseRestock,
   soonestRestock,
   type RestockWindow,
 } from "./restocks";
@@ -145,6 +146,53 @@ describe("kitRestockWindow", () => {
     );
     // Cada pieza aporta la suya más cercana (12 y 14) y manda la más tardía.
     expect(ventana).toEqual({ etaFrom: "2026-08-14", etaTo: "2026-08-16" });
+  });
+});
+
+describe("phraseRestock", () => {
+  it("un solo día se dice con el día: el proveedor está seguro", () => {
+    expect(phraseRestock({ etaFrom: "2026-08-20", etaTo: "2026-08-20" }, HOY)).toEqual({
+      kind: "day",
+      day: "2026-08-20",
+    });
+  });
+
+  it("una ventana se dice con sus dos extremos, porque eso es la duda", () => {
+    expect(phraseRestock({ etaFrom: "2026-08-10", etaTo: "2026-08-15" }, HOY)).toEqual({
+      kind: "range",
+      from: "2026-08-10",
+      to: "2026-08-15",
+    });
+  });
+
+  it("a más de mes y medio se dice el mes, no el día", () => {
+    // Dar una fecha exacta a tres meses vista finge una precisión que no hay.
+    expect(phraseRestock({ etaFrom: "2026-11-10", etaTo: "2026-11-20" }, HOY)).toEqual({
+      kind: "month",
+      day: "2026-11-10",
+    });
+  });
+
+  it("justo en el límite todavía se dice la ventana", () => {
+    const limite = "2026-09-20"; // 45 días exactos
+    expect(phraseRestock({ etaFrom: limite, etaTo: "2026-09-25" }, HOY).kind).toBe(
+      "range",
+    );
+  });
+
+  it("un día después del límite ya se vuelve vago", () => {
+    expect(phraseRestock({ etaFrom: "2026-09-21", etaTo: "2026-09-25" }, HOY).kind).toBe(
+      "month",
+    );
+  });
+
+  it("una ventana que ya empezó se dice igual con sus extremos", () => {
+    // "Entre el 1 y el 15" el día 6: sigue siendo la mejor descripción.
+    expect(phraseRestock({ etaFrom: "2026-08-01", etaTo: "2026-08-15" }, HOY)).toEqual({
+      kind: "range",
+      from: "2026-08-01",
+      to: "2026-08-15",
+    });
   });
 });
 

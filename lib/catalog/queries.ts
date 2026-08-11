@@ -27,7 +27,17 @@ import {
   zones,
 } from "@/lib/db/schema";
 import { sumItemsUsd, type KitItemDetail } from "@/lib/kits/queries";
-import { availableUnits, kitAvailableUnits } from "@/lib/inventory/availability";
+import {
+  availableUnits,
+  kitAvailableUnits,
+  missingComponents,
+} from "@/lib/inventory/availability";
+import {
+  isoDay,
+  kitRestockWindow,
+  soonestRestock,
+  type RestockWindow,
+} from "@/lib/inventory/restocks";
 import type { EquipmentScope } from "@/lib/services/enums";
 import {
   CATALOG_PAGE_SIZE,
@@ -720,11 +730,25 @@ export type CatalogProduct = {
   priceUsd: number;
   /** `stock - reserved`: lo que de verdad se puede pedir, no lo que hay. */
   available: number;
+  /**
+   * Cuándo vuelve, si es que se ha anunciado. `null` significa **no sabemos**,
+   * que no es lo mismo que "pronto": confundirlas es lo que erosiona la
+   * confianza, así que la ficha dice una cosa o la otra pero nunca inventa.
+   */
+  restock: RestockNotice | null;
   images: string[];
   supplier: CatalogItemSupplier;
   /** Instalaciones que este producto ofrece; vacío si no hay ninguna. */
   installations: CatalogInstallation[];
 };
+
+/** La ventana de una reposición viva, ya resuelta a lo que la ficha enseña. */
+export type RestockNotice = { etaFrom: string; etaTo: string };
+
+/** La ventana que sobrevive, sin el resto de la fila. */
+function noticeFrom(restock: RestockWindow | null): RestockNotice | null {
+  return restock && { etaFrom: restock.etaFrom, etaTo: restock.etaTo };
+}
 
 export type CatalogKitItem = KitItemDetail & {
   productSlug: string;
@@ -752,6 +776,12 @@ export type CatalogKit = {
    * la más escasa, contando ya lo comprometido por pedidos sin cobrar.
    */
   available: number;
+  /**
+   * Cuándo vuelve el kit: la ventana **más tardía** de las piezas que le faltan,
+   * porque llega cuando llegue la última. `null` si a alguna no le espera nada —
+   * entonces el kit no promete.
+   */
+  restock: RestockNotice | null;
   /** Instalaciones que este kit ofrece; vacío si no hay ninguna. */
   installations: CatalogInstallation[];
 };
@@ -808,16 +838,27 @@ export const getCatalogProduct = cache(async function getCatalogProduct(
   const [row, installations] = await Promise.all([
     db.query.products.findFirst({
       where: and(eq(products.slug, slug), eq(products.active, true)),
-      with: { supplier: supplierWith },
+      with: {
+        supplier: supplierWith,
+        // Las reposiciones vivas se filtran en memoria y no en SQL: son pocas
+        // por producto, y la regla de cuál vale ya está escrita y probada en
+        // `lib/inventory/restocks.ts`. Repetirla en un `where` sería tenerla
+        // en dos sitios que pueden divergir.
+        restocks: {
+          columns: { status: true, etaFrom: true, etaTo: true },
+        },
+      },
     }),
     getInstallationsFor("PRODUCT", slug),
   ]);
   // Un producto de un proveedor dado de baja no se ofrece.
   if (!row || !row.supplier.active) return null;
 
-  const { supplier, ...product } = row;
+  const { supplier, restocks: announced, ...product } = row;
+  const today = isoDay(new Date());
   return {
     ...product,
+    restock: noticeFrom(soonestRestock(announced, today)),
     // Aquí se puede usar la función pura: la ficha ya trae la fila entera. El
     // listado no —tendría que traerse las piezas de cada kit a Node—, así que
     // allí la misma regla va escrita en SQL.
@@ -849,6 +890,11 @@ export const getCatalogKit = cache(async function getCatalogKit(
                 stock: true,
                 reserved: true,
               },
+              with: {
+                restocks: {
+                  columns: { status: true, etaFrom: true, etaTo: true },
+                },
+              },
             },
           },
         },
@@ -871,18 +917,23 @@ export const getCatalogKit = cache(async function getCatalogKit(
     }))
     .sort((a, b) => collator.compare(a.productName, b.productName));
 
+  // Lo que el kit necesita y no tiene, con lo que espera cada pieza: de ahí
+  // sale tanto que esté agotado como cuándo vuelve.
+  const components = items.map((item) => ({
+    stock: item.product.stock,
+    reserved: item.product.reserved,
+    quantity: item.quantity,
+    restocks: item.product.restocks,
+  }));
+  const today = isoDay(new Date());
+
   const itemsTotalUsd = sumItemsUsd(detail);
   return {
     ...kit,
+    restock: kitRestockWindow(missingComponents(components), today),
     // La misma función que prueban los tests: aquí sí se pueden traer las
     // piezas, porque la ficha las enseña de todos modos.
-    available: kitAvailableUnits(
-      items.map((item) => ({
-        stock: item.product.stock,
-        reserved: item.product.reserved,
-        quantity: item.quantity,
-      })),
-    ),
+    available: kitAvailableUnits(components),
     items: detail,
     installations,
     itemsTotalUsd,

@@ -1,7 +1,7 @@
 import "server-only";
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { products, restocks, stockMovements } from "@/lib/db/schema";
+import { products, restocks, stockAlerts, stockMovements } from "@/lib/db/schema";
 import { availableUnits } from "./availability";
 
 /** Lo que el panel de un producto necesita saber de su inventario. */
@@ -80,4 +80,24 @@ export async function getStockPanel(productId: string): Promise<StockPanel | nul
     })),
     restocks: announced,
   };
+}
+
+/**
+ * ¿Este usuario ya pidió que le avisemos de este producto?
+ *
+ * Decide si el botón dice "avísame" o "te avisaremos". Se pregunta solo cuando
+ * hay sesión y el producto está agotado — no en cada visita al catálogo.
+ */
+export async function isWatchingProduct(
+  productId: string,
+  userId: string,
+): Promise<boolean> {
+  const row = await db.query.stockAlerts.findFirst({
+    where: and(
+      eq(stockAlerts.productId, productId),
+      eq(stockAlerts.userId, userId),
+    ),
+    columns: { id: true },
+  });
+  return row != null;
 }

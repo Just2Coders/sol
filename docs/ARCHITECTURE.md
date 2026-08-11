@@ -449,6 +449,21 @@ products.reserved = coalesce(sum(quantity de las reservas HELD), 0)
 price_usd         = el price_schedules de mayor starts_at <= now()
 ```
 
+**Un agotado no es un callejón.** Cuando no queda nada, el bloque de compra de la
+ficha deja el sitio a lo único útil que queda decir: si vuelve y si te avisamos
+(`RestockNotice`, por el mismo `purchase` que ya usaba la ficha de un servicio).
+Se dice una de dos cosas y nunca se inventa la tercera — una ventana anunciada,
+o «no sabemos». «Vuelve pronto» sin que nadie lo haya prometido es lo que hace
+que la siguiente promesa no valga.
+
+Lo que **no** se hace es venderlo igual: con pago manual, cobrar por adelantado
+contra una fecha aproximada es prometer lo que no se controla. En su lugar está
+`stock_alerts`, que captura la demanda sin tocar dinero y le dice al proveedor
+cuánto pedir. Pide sesión porque el aviso va a una persona. Un **kit** no lo
+lleva —`stock_alerts` es por producto—: su ficha dice cuándo vuelve, heredando la
+ventana **más tardía** de las piezas que le faltan, porque llega cuando llegue la
+última.
+
 **La misma regla, escrita dos veces y a propósito.** Qué se puede vender está en
 `lib/inventory/availability.ts` (puro, con tests) y también en SQL dentro de
 `lib/catalog/queries.ts`. No es duplicación por descuido: las **fichas** cargan
