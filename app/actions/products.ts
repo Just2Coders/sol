@@ -7,6 +7,7 @@ import * as z from "zod";
 import { db } from "@/lib/db";
 import { kitItems, products, suppliers } from "@/lib/db/schema";
 import { verifyAdmin } from "@/lib/dal";
+import { openLedger } from "@/lib/inventory/service";
 import { deleteBlobs, removedImages } from "@/lib/blob";
 import {
   idSchema,
@@ -22,16 +23,26 @@ import { slugify } from "@/lib/utils";
 
 export type ProductFormState = ActionState;
 
+/**
+ * Los datos del producto **sin las existencias**.
+ *
+ * `stock` no está aquí a propósito: es un saldo que solo se mueve por el libro
+ * mayor (`lib/inventory/service.ts`), y dejarlo en este formulario significaba
+ * que guardar la ficha pisaba la columna y rompía la invariante
+ * `stock = sum(movimientos)`. Al crear sí se pregunta —es la apertura del
+ * libro—, y para eso está `openingStockSchema` abajo.
+ */
 const productSchema = z.object({
   supplierId: idSchema,
   name: z.string().trim().min(2, { error: "El nombre es muy corto." }),
   description: optionalText,
   specs: specsSchema,
   priceUsd: priceUsdSchema,
-  stock: quantitySchema(0),
   images: imageUrlsSchema,
   active: z.boolean(),
 });
+
+const openingStockSchema = quantitySchema(0);
 
 function parseProductForm(formData: FormData) {
   return productSchema.safeParse({
@@ -40,7 +51,6 @@ function parseProductForm(formData: FormData) {
     description: formData.get("description"),
     specs: formData.get("specs") ?? "",
     priceUsd: formData.get("priceUsd"),
-    stock: formData.get("stock"),
     images: parseValues(formData.getAll("images")),
     active: formData.get("active") === "on",
   });
@@ -56,7 +66,7 @@ export async function createProduct(
   _state: ProductFormState,
   formData: FormData,
 ): Promise<ProductFormState> {
-  await verifyAdmin();
+  const admin = await verifyAdmin();
 
   const parsed = parseProductForm(formData);
   if (!parsed.success) {
@@ -81,7 +91,22 @@ export async function createProduct(
     return { errors: { name: ["Ya existe un producto con ese nombre."] } };
   }
 
-  await db.insert(products).values({ ...data, slug });
+  const opening = openingStockSchema.safeParse(formData.get("stock"));
+  if (!opening.success) {
+    return { errors: { stock: z.flattenError(opening.error).formErrors } };
+  }
+
+  // El producto nace con el saldo a cero y el libro lo sube: así la invariante
+  // se cumple desde la primera fila en vez de tener que arreglarla después.
+  const [created] = await db
+    .insert(products)
+    .values({ ...data, slug })
+    .returning({ id: products.id });
+
+  await openLedger(created.id, opening.data, {
+    actorUserId: admin.userId,
+    onBehalfOfSupplierId: data.supplierId,
+  });
 
   revalidateProducts();
   redirect("/admin/products");

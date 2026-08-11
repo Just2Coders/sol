@@ -66,6 +66,10 @@ lib/                    Lógica de servidor reutilizable (NO específica de una 
     holds.ts            Los relojes de una reserva: cuánto retiene el
                         proveedor y de ahí el resto (puro)
     restocks.ts         La reposición prometida y su ventana (puro)
+    adjustments.ts      Qué recuento y qué ventana son válidos (puro)
+    service.ts          El ÚNICO sitio que escribe stock: movimientos,
+                        reposiciones y el saldo recalculado desde el libro
+    queries.ts          El inventario de un producto para el panel
   pricing/
     effective.ts        El precio efectivo, el programado y qué hay que
                         promover (puro)
@@ -444,6 +448,18 @@ products.stock    = coalesce(sum(stock_movements.delta), 0)
 products.reserved = coalesce(sum(quantity de las reservas HELD), 0)
 price_usd         = el price_schedules de mayor starts_at <= now()
 ```
+
+**El saldo se recalcula, no se incrementa.** `lib/inventory/service.ts` escribe
+la fila del libro y después pone `products.stock` igual a la suma de su libro —
+no `stock + delta`. La diferencia es lo que hace que un fallo a medias sea
+inofensivo: `stock = stock + delta` acumula el error si se repite, y `neon-http`
+no da transacciones para impedirlo; recomputar converge siempre a la verdad, así
+que la reparación es volver a ejecutarlo (`repairAllBalances`).
+
+Por eso también **el formulario de producto ya no edita las existencias**: al
+crear se pregunta el saldo de apertura —que entra como movimiento `OPENING`— y a
+partir de ahí solo se mueven por recuento, merma o reposición. Guardar la ficha
+pisaba la columna y rompía la invariante en el acto.
 
 Se cumplen desde la migración `0007`, que además del schema trae el **backfill**
 —un `OPENING` por producto y una fila de precio por item—; sin él las tablas
