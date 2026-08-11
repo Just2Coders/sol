@@ -1,6 +1,7 @@
 import { relations } from "drizzle-orm";
 import {
   boolean,
+  date,
   index,
   integer,
   jsonb,
@@ -93,6 +94,56 @@ export const equipmentScope = pgEnum("equipment_scope", [
   "ANY", // también lo que el comprador consiguió fuera de la plataforma
 ]);
 
+/**
+ * Por qué cambió el saldo de un producto.
+ *
+ * `products.stock` es el saldo y esto es el porqué: cada fila del libro mayor
+ * lleva su motivo, y la invariante `stock = sum(delta)` se puede comprobar con
+ * una query. Ninguna otra cosa escribe stock.
+ */
+export const stockMovementReason = pgEnum("stock_movement_reason", [
+  "OPENING", // saldo de apertura: lo que había el día que nació el libro
+  "RESTOCK", // llegó una reposición
+  "SALE", // se cobró un pedido y su reserva se consumió
+  "RELEASE", // una reserva caducó o se liberó, y el stock vuelve
+  "ADJUSTMENT", // recuento manual del proveedor
+  "LOSS", // rotura, robo, merma
+  "RETURN", // el cliente devolvió
+]);
+
+/**
+ * Una reserva de stock nace `HELD` y muere de una de dos formas: se cobra
+ * (`CONSUMED`, y ahí baja el saldo con un `SALE`) o se suelta (`RELEASED`,
+ * porque el proveedor rechazó, venció el plazo o se canceló).
+ */
+export const reservationStatus = pgEnum("reservation_status", [
+  "HELD",
+  "CONSUMED",
+  "RELEASED",
+]);
+
+/**
+ * La reposición prometida: una intención con fecha borrosa, no un hecho.
+ *
+ * `ANNOUNCED` es lo único que el catálogo enseña, y solo mientras su ventana no
+ * haya pasado. `EXPIRED` lo pone el cron cuando `eta_to` quedó atrás sin que
+ * nadie la resolviera — para que el proveedor la vea en su lista, no para
+ * enseñarla al comprador.
+ */
+export const restockStatus = pgEnum("restock_status", [
+  "ANNOUNCED",
+  "ARRIVED",
+  "CANCELLED",
+  "EXPIRED",
+]);
+
+/**
+ * Qué puede tener precio. Coincide con `order_item_type` en sus tres valores,
+ * pero se declara aparte porque responde a otra pregunta: uno dice qué cabe en
+ * una línea de pedido y este qué se puede tarifar.
+ */
+export const priceableType = pgEnum("priceable_type", ["PRODUCT", "KIT", "SERVICE"]);
+
 // ─── Zonas ───────────────────────────────────────────────────────────────────
 // Jerarquía simple: estado (parentId null) → ciudad/municipio (parentId = estado).
 
@@ -142,6 +193,17 @@ export const suppliers = pgTable("suppliers", {
    * así que cambiarlo no mueve los servicios que ya existen.
    */
   defaultEquipmentScope: equipmentScope("default_equipment_scope").notNull().default("OWN"),
+  /**
+   * Cuántas horas aguanta reservado lo suyo mientras el comprador paga.
+   *
+   * Lo decide él porque el coste es suyo: retener mercancía es no vendérsela al
+   * que entra por la puerta. `null` = las horas por defecto de la plataforma.
+   *
+   * **Se lee una sola vez**, al crear la reserva, y el resultado queda escrito
+   * en su `expires_at` — mismo criterio que el snapshot de precio: cambiar de
+   * idea mañana no mueve los pedidos que ya están en curso.
+   */
+  reservationHoldHours: integer("reservation_hold_hours"),
   active: boolean("active").notNull().default(true),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
@@ -196,8 +258,23 @@ export const products = pgTable(
     description: text("description"),
     // Ficha técnica flexible: { potencia: "450W", voltaje: "24V", ... }
     specs: jsonb("specs").$type<Record<string, string>>().notNull().default({}),
+    /**
+     * El precio efectivo de hoy. Es una **caché** de `price_schedules`, que es
+     * la verdad: el listado ordena y filtra por rango sobre esta columna
+     * indexada, y resolverlo por fila con un lateral join sería pagar la
+     * temporalidad en la consulta más caliente del sitio. El checkout no la
+     * lee: relee el schedule.
+     */
     priceUsd: numeric("price_usd", { precision: 10, scale: 2, mode: "number" }).notNull(),
+    /** Lo que hay en el almacén. El porqué de cada cambio vive en `stock_movements`. */
     stock: integer("stock").notNull().default(0),
+    /**
+     * Lo comprometido por pedidos que aún no se han cobrado. **Vendible =
+     * `stock - reserved`**, y esa resta es la que miran el catálogo, la ficha y
+     * el checkout. Es la suma de las reservas `HELD`, cacheada aquí por la
+     * misma razón que el precio: la tarjeta la necesita por fila.
+     */
+    reserved: integer("reserved").notNull().default(0),
     images: text("images").array().notNull().default([]),
     active: boolean("active").notNull().default(true),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -452,6 +529,206 @@ export const payments = pgTable("payments", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+// ─── Inventario ──────────────────────────────────────────────────────────────
+// Tres cosas que hoy eran un escalar y no lo son: lo que hay, lo que se promete
+// y lo que vale. Ver «Inventario, reposiciones y precio en el tiempo» en
+// PLAN.md — aquí solo está la forma.
+
+/**
+ * El libro mayor del stock: solo se añade, nunca se edita ni se borra.
+ *
+ * `products.stock` es el saldo y esto explica cada cambio, así que el histórico
+ * sale gratis y la doble contabilidad es segura porque su invariante es
+ * comprobable: **`products.stock = sum(delta)` por producto**. Nada más escribe
+ * stock; todo pasa por `lib/inventory/`.
+ *
+ * Firma con el usuario **real** más a nombre de quién actuó. Así el histórico
+ * dice "el admin ajustó el stock de Solar Caribe" y nunca miente, que es justo
+ * lo que se pierde si suplantar fuera cambiar de sesión.
+ */
+export const stockMovements = pgTable(
+  "stock_movements",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    productId: uuid("product_id")
+      .notNull()
+      .references(() => products.id, { onDelete: "cascade" }),
+    /** Con signo: `+20` una reposición, `-3` una venta. */
+    delta: integer("delta").notNull(),
+    reason: stockMovementReason("reason").notNull(),
+    /**
+     * De qué parte de pedido salió, cuando el motivo es una venta o la
+     * liberación de su reserva. `set null` al borrarse: el pedido se puede ir,
+     * el movimiento que explica el saldo de hoy no.
+     */
+    orderSupplierId: uuid("order_supplier_id").references(() => orderSuppliers.id, {
+      onDelete: "set null",
+    }),
+    note: text("note"),
+    /** Quién lo hizo de verdad. Nulo cuando lo escribe el cron. */
+    actorUserId: uuid("actor_user_id").references(() => users.id),
+    /** En nombre de quién actuaba. Nulo si actuaba por sí mismo. */
+    onBehalfOfSupplierId: uuid("on_behalf_of_supplier_id").references(() => suppliers.id),
+    occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    // El histórico de un producto se lee siempre del más reciente hacia atrás, y
+    // la comprobación de la invariante entra por el mismo sitio.
+    index("stock_movements_product_id_occurred_at_idx").on(t.productId, t.occurredAt),
+  ],
+);
+
+/**
+ * Lo comprometido por un pedido que todavía no se ha cobrado.
+ *
+ * Con pago manual pasan días entre "pedido creado" y "pago confirmado". Si el
+ * stock bajara al confirmar, dos personas comprarían el último panel y a una
+ * habría que devolverle; si bajara al hacer checkout, un carrito abandonado
+ * mataría esa unidad para siempre. Por eso se retiene con vencimiento.
+ *
+ * Cuelga de `order_suppliers` y no del pedido: así cancelar la parte de un
+ * proveedor devuelve **solo** su stock. Invariante:
+ * `products.reserved = sum(quantity)` de las `HELD`.
+ */
+export const stockReservations = pgTable(
+  "stock_reservations",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orderSupplierId: uuid("order_supplier_id")
+      .notNull()
+      .references(() => orderSuppliers.id, { onDelete: "cascade" }),
+    productId: uuid("product_id")
+      .notNull()
+      .references(() => products.id, { onDelete: "cascade" }),
+    quantity: integer("quantity").notNull(),
+    /**
+     * Absoluto y escrito una sola vez, con el `reservation_hold_hours` que el
+     * proveedor tenía en ese momento. Si mañana cambia de idea, esta reserva no
+     * se mueve.
+     */
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    status: reservationStatus("status").notNull().default("HELD"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+  },
+  (t) => [
+    // Sumar lo retenido de un producto: la invariante de `reserved`.
+    index("stock_reservations_product_id_status_idx").on(t.productId, t.status),
+    // El barrido del cron entra por aquí: las vivas que ya vencieron.
+    index("stock_reservations_status_expires_at_idx").on(t.status, t.expiresAt),
+    // Las reservas de una parte, para consumirlas o soltarlas de una vez.
+    index("stock_reservations_order_supplier_id_idx").on(t.orderSupplierId),
+  ],
+);
+
+/**
+ * La reposición que el proveedor anuncia. **No toca el saldo.**
+ *
+ * Vive aparte de `stock_movements` a propósito: el stock actual es un hecho
+ * verificable y transaccional, y esto es una intención con fecha borrosa.
+ * Juntos, cada lectura de "¿puedo vender esto?" tendría que filtrar por fecha y
+ * un proveedor optimista contaminaría lo vendible.
+ *
+ * La incertidumbre es **estructural**: no lleva fecha, lleva ventana. Estrecha
+ * significa "seguro", ancha "creo que sí", y la UI no puede renderizarla como
+ * promesa aunque quiera. Al llegar, la fila pasa a `ARRIVED` **y** se escribe un
+ * `RESTOCK` con la cantidad real: dos hechos distintos, y la distancia entre
+ * ellos dice qué proveedor cumple lo que anuncia.
+ */
+export const restocks = pgTable(
+  "restocks",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    productId: uuid("product_id")
+      .notNull()
+      .references(() => products.id, { onDelete: "cascade" }),
+    /** Lo estimado. Lo que de verdad llegue va en el movimiento `RESTOCK`. */
+    quantity: integer("quantity").notNull(),
+    // Sin hora: la promesa es de días. `date` no lleva zona, que es justo lo que
+    // se quiere — "el 12" es el 12 para todo el mundo.
+    etaFrom: date("eta_from", { mode: "string" }).notNull(),
+    etaTo: date("eta_to", { mode: "string" }).notNull(),
+    status: restockStatus("status").notNull().default("ANNOUNCED"),
+    note: text("note"),
+    createdBy: uuid("created_by").references(() => users.id),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+  },
+  (t) => [
+    // Lo que el catálogo pregunta: las anunciadas de este producto. La ventana
+    // la filtra la propia consulta (`eta_to >= today`), así que un anuncio
+    // olvidado desaparece solo sin que nadie vaya a limpiarlo.
+    index("restocks_product_id_status_idx").on(t.productId, t.status),
+    // Por donde entra el cron a caducar las que se pasaron de ventana.
+    index("restocks_status_eta_to_idx").on(t.status, t.etaTo),
+  ],
+);
+
+/**
+ * "Avísame cuando vuelva".
+ *
+ * Es lo que se ofrece en lugar de la pre-orden, que queda fuera de la Fase 1:
+ * con pago manual, vender lo que no ha llegado sería cobrar por adelantado
+ * contra una fecha que nosotros mismos presentamos como aproximada. Esto captura
+ * la demanda sin tocar dinero — y de paso le dice al proveedor cuánto pedir.
+ */
+export const stockAlerts = pgTable(
+  "stock_alerts",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    productId: uuid("product_id")
+      .notNull()
+      .references(() => products.id, { onDelete: "cascade" }),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    notifiedAt: timestamp("notified_at", { withTimezone: true }),
+  },
+  (t) => [
+    // Apuntarse dos veces al mismo producto no significa nada.
+    unique("stock_alerts_product_id_user_id_key").on(t.productId, t.userId),
+    // A quién avisar cuando entra un `RESTOCK`: los que aún no saben.
+    index("stock_alerts_product_id_notified_at_idx").on(t.productId, t.notifiedAt),
+  ],
+);
+
+/**
+ * El precio como línea de tiempo, para productos, kits y servicios.
+ *
+ * Es la **verdad**: las filas pasadas son el histórico, las futuras el precio
+ * programado, y el efectivo es el de mayor `starts_at <= now()`. La columna
+ * `price_usd` de cada tabla es una caché de ese efectivo — ver el comentario en
+ * `products.priceUsd`.
+ *
+ * `targetId` es una FK "blanda" a `products.id`, `kits.id` o `services.id` según
+ * `targetType`, igual que `order_items.itemId` e `installation_offers.targetId`.
+ */
+export const priceSchedules = pgTable(
+  "price_schedules",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    targetType: priceableType("target_type").notNull(),
+    targetId: uuid("target_id").notNull(),
+    priceUsd: numeric("price_usd", { precision: 10, scale: 2, mode: "number" }).notNull(),
+    /** Desde cuándo rige. En el futuro = anunciado; en el pasado = histórico. */
+    startsAt: timestamp("starts_at", { withTimezone: true }).notNull(),
+    note: text("note"),
+    createdBy: uuid("created_by").references(() => users.id),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    // "El precio efectivo de este item": se entra por el par y se toma la fila
+    // de mayor `starts_at` que ya haya empezado, así que el índice tiene que
+    // llevar las tres columnas y en este orden.
+    index("price_schedules_target_starts_at_idx").on(
+      t.targetType,
+      t.targetId,
+      t.startsAt,
+    ),
+  ],
+);
+
 // ─── Relaciones (para db.query con joins tipados) ───────────────────────────
 
 export const zonesRelations = relations(zones, ({ one, many }) => ({
@@ -482,7 +759,43 @@ export const supplierZonesRelations = relations(supplierZones, ({ one }) => ({
 export const productsRelations = relations(products, ({ one, many }) => ({
   supplier: one(suppliers, { fields: [products.supplierId], references: [suppliers.id] }),
   kitItems: many(kitItems),
+  movements: many(stockMovements),
+  reservations: many(stockReservations),
+  restocks: many(restocks),
+  alerts: many(stockAlerts),
 }));
+
+export const stockMovementsRelations = relations(stockMovements, ({ one }) => ({
+  product: one(products, { fields: [stockMovements.productId], references: [products.id] }),
+  actor: one(users, { fields: [stockMovements.actorUserId], references: [users.id] }),
+  onBehalfOf: one(suppliers, {
+    fields: [stockMovements.onBehalfOfSupplierId],
+    references: [suppliers.id],
+  }),
+}));
+
+export const stockReservationsRelations = relations(stockReservations, ({ one }) => ({
+  product: one(products, {
+    fields: [stockReservations.productId],
+    references: [products.id],
+  }),
+  part: one(orderSuppliers, {
+    fields: [stockReservations.orderSupplierId],
+    references: [orderSuppliers.id],
+  }),
+}));
+
+export const restocksRelations = relations(restocks, ({ one }) => ({
+  product: one(products, { fields: [restocks.productId], references: [products.id] }),
+}));
+
+export const stockAlertsRelations = relations(stockAlerts, ({ one }) => ({
+  product: one(products, { fields: [stockAlerts.productId], references: [products.id] }),
+  user: one(users, { fields: [stockAlerts.userId], references: [users.id] }),
+}));
+
+// `price_schedules` no lleva relación: `targetId` apunta a tres tablas según
+// `targetType`, y eso drizzle no lo puede tipar — igual que `installationOffers`.
 
 export const kitsRelations = relations(kits, ({ one, many }) => ({
   supplier: one(suppliers, { fields: [kits.supplierId], references: [suppliers.id] }),
