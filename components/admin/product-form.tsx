@@ -107,18 +107,28 @@ export function ProductForm({
             />
             <FieldError state={state} field="priceUsd" />
           </div>
-          <div className="grid gap-2">
-            <Label htmlFor="stock">Stock (unidades)</Label>
-            <Input
-              id="stock"
-              name="stock"
-              inputMode="numeric"
-              defaultValue={product?.stock ?? 0}
-              placeholder="25"
-              required
-            />
-            <FieldError state={state} field="stock" />
-          </div>
+          {/* Solo al crear: es la **apertura del libro mayor**, no un campo
+              editable. Guardar la ficha ya no puede pisar el saldo — se mueve
+              con recuentos, mermas y reposiciones, en el panel de abajo, y cada
+              cambio queda explicado. Ver `lib/inventory/service.ts`. */}
+          {!product && (
+            <div className="grid gap-2">
+              <Label htmlFor="stock">Existencias iniciales</Label>
+              <Input
+                id="stock"
+                name="stock"
+                inputMode="numeric"
+                defaultValue={0}
+                placeholder="25"
+                required
+              />
+              <p className="text-sm text-muted-foreground">
+                Con cuántas unidades abre el almacén. A partir de ahí se ajusta
+                desde el inventario del producto.
+              </p>
+              <FieldError state={state} field="stock" />
+            </div>
+          )}
           <div className="grid gap-2 sm:col-span-2">
             <Label htmlFor="description">Descripción</Label>
             <Textarea
