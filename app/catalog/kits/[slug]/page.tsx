@@ -10,7 +10,9 @@ import { CatalogDetailHead } from "@/components/catalog/detail/detail-head";
 import { CatalogDetailShell } from "@/components/catalog/detail/detail-shell";
 import { CatalogKitComponents } from "@/components/catalog/detail/kit-components";
 import { CatalogSupplierReach } from "@/components/catalog/detail/supplier-block";
+import { RestockNotice } from "@/components/catalog/detail/restock-notice";
 // import { CatalogSupplierRelated } from "@/components/catalog/detail/supplier-related";
+import { isoDay } from "@/lib/inventory/restocks";
 import { kitPhotos, photographedComponents } from "@/lib/catalog/photos";
 import { getCatalogKit } from "@/lib/catalog/queries";
 
@@ -63,6 +65,13 @@ export default async function KitPage({ params }: KitPageProps) {
           name={kit.name}
           priceUsd={kit.priceUsd}
           savingsUsd={kit.savingsUsd}
+          // Sin piezas suficientes no hay kit que vender: el bloque de compra
+          // deja el sitio a cuándo vuelven las que faltan.
+          purchase={
+            kit.available === 0 ? (
+              <RestockNotice restock={kit.restock} today={isoDay(new Date())} />
+            ) : undefined
+          }
           item={{
             type: "KIT",
             id: kit.id,

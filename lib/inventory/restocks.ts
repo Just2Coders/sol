@@ -86,6 +86,40 @@ export function kitRestockWindow(
 }
 
 /**
+ * Cómo se dice una ventana sin que suene a promesa.
+ *
+ * Devuelve las piezas, no la frase: quién la pinta decide el formato de fecha y
+ * la tipografía. Lo que se decide **aquí** —y por eso es puro y tiene tests— es
+ * cuándo una ventana se dice con un día y cuándo con dos, y a partir de cuándo
+ * deja de valer la pena dar una fecha.
+ *
+ * - Un solo día: el proveedor está seguro, se dice el día.
+ * - Dos días: la ventana **es** la incertidumbre y se enseñan los dos extremos.
+ * - Muy lejos: dar una fecha exacta a tres meses vista finge una precisión que
+ *   no hay. Se dice el mes y ya.
+ */
+export type RestockPhrasing =
+  | { kind: "day"; day: string }
+  | { kind: "range"; from: string; to: string }
+  | { kind: "month"; day: string };
+
+/** A partir de aquí una fecha exacta ya no informa: informa el mes. */
+export const VAGUE_AFTER_DAYS = 45;
+
+export function phraseRestock(
+  { etaFrom, etaTo }: Pick<RestockWindow, "etaFrom" | "etaTo">,
+  today: string,
+): RestockPhrasing {
+  const days =
+    (Date.parse(`${etaFrom}T00:00:00Z`) - Date.parse(`${today}T00:00:00Z`)) /
+    86_400_000;
+
+  if (days > VAGUE_AFTER_DAYS) return { kind: "month", day: etaFrom };
+  if (etaFrom === etaTo) return { kind: "day", day: etaFrom };
+  return { kind: "range", from: etaFrom, to: etaTo };
+}
+
+/**
  * ¿Le toca al cron marcar este anuncio como caducado?
  *
  * Distinto de `isRestockVisible`: el catálogo deja de enseñarlo el día siguiente

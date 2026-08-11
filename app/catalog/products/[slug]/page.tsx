@@ -11,6 +11,10 @@ import { CatalogDetailRow } from "@/components/catalog/detail/detail-row";
 import { CatalogDetailShell } from "@/components/catalog/detail/detail-shell";
 import { CatalogSupplierReach } from "@/components/catalog/detail/supplier-block";
 // import { CatalogSupplierRelated } from "@/components/catalog/detail/supplier-related";
+import { RestockNotice } from "@/components/catalog/detail/restock-notice";
+import { isWatchingProduct } from "@/lib/inventory/queries";
+import { isoDay } from "@/lib/inventory/restocks";
+import { getSession } from "@/lib/session";
 import { itemPhotos } from "@/lib/catalog/photos";
 import { getCatalogProduct } from "@/lib/catalog/queries";
 
@@ -51,6 +55,13 @@ export default async function ProductPage({ params }: ProductPageProps) {
   const specs = Object.entries(product.specs);
   const photos = itemPhotos(product.images, product.name);
 
+  // Solo se pregunta quién mira si hace falta: agotado y con sesión. Una ficha
+  // con existencias no gasta ni una consulta en esto.
+  const soldOut = product.available === 0;
+  const session = soldOut ? await getSession() : null;
+  const watching =
+    session != null && (await isWatchingProduct(product.id, session.userId));
+
   return (
     <CatalogDetailShell
       photos={photos}
@@ -72,6 +83,22 @@ export default async function ProductPage({ params }: ProductPageProps) {
             supplierName: product.supplier.name,
             stock: product.available,
           }}
+          // Agotado, la compra deja el sitio a lo único útil que queda decir:
+          // si vuelve y si te avisamos.
+          purchase={
+            soldOut ? (
+              <RestockNotice
+                restock={product.restock}
+                today={isoDay(new Date())}
+                watch={{
+                  productId: product.id,
+                  slug: product.slug,
+                  signedIn: session != null,
+                  watching,
+                }}
+              />
+            ) : undefined
+          }
           installations={
             <CatalogInstallations
               installations={product.installations}
