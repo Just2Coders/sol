@@ -82,3 +82,78 @@ export async function hasForeignOffers(
 
   return onProducts.length > 0 || onKits.length > 0;
 }
+
+/** Una oferta tal como la guarda la tabla: el par que identifica al equipo. */
+export type ServiceOffer = {
+  targetType: "PRODUCT" | "KIT";
+  targetId: string;
+};
+
+/** Sobre qué equipos se ofrece hoy este servicio. Rellena las casillas marcadas. */
+export async function getServiceOffers(serviceId: string): Promise<ServiceOffer[]> {
+  return db
+    .select({
+      targetType: installationOffers.targetType,
+      targetId: installationOffers.targetId,
+    })
+    .from(installationOffers)
+    .where(eq(installationOffers.serviceId, serviceId));
+}
+
+export type InstallableTarget = {
+  type: "PRODUCT" | "KIT";
+  id: string;
+  name: string;
+  /** Un item inactivo se sigue enseñando: hay que poder quitarle una oferta. */
+  active: boolean;
+};
+
+export type InstallableGroup = {
+  supplierId: string;
+  supplierName: string;
+  targets: InstallableTarget[];
+};
+
+/**
+ * Todo lo que se puede instalar, agrupado por quién lo vende.
+ *
+ * Es el universo del selector de ofertas, y viene entero **a propósito**: qué
+ * subconjunto puede elegir cada servicio depende de su alcance —`OWN` solo su
+ * proveedor, los otros dos cualquiera— y eso cambia en el mismo formulario, así
+ * que recortarlo en el servidor obligaría a volver a él en cada cambio. Quien
+ * decide de verdad es la Action, que revalida lo que llegue.
+ *
+ * Los kits van antes que los productos dentro de cada proveedor, el mismo orden
+ * "sugerido" que usa el catálogo: es lo que la casa compra.
+ *
+ * _Límite conocido:_ con muchos proveedores esto es una lista larga. Cuando
+ * llegue ese día toca buscador y no otra consulta — la forma del dato no cambia.
+ */
+export async function getInstallableTargets(): Promise<InstallableGroup[]> {
+  const rows = await db.query.suppliers.findMany({
+    columns: { id: true, name: true },
+    with: {
+      products: { columns: { id: true, name: true, active: true } },
+      kits: { columns: { id: true, name: true, active: true } },
+    },
+    orderBy: (s, { asc }) => [asc(s.name)],
+  });
+
+  const byName = (a: InstallableTarget, b: InstallableTarget) =>
+    a.name.localeCompare(b.name);
+
+  return rows
+    .map((supplier) => ({
+      supplierId: supplier.id,
+      supplierName: supplier.name,
+      targets: [
+        ...supplier.kits
+          .map((kit): InstallableTarget => ({ type: "KIT", ...kit }))
+          .sort(byName),
+        ...supplier.products
+          .map((product): InstallableTarget => ({ type: "PRODUCT", ...product }))
+          .sort(byName),
+      ],
+    }))
+    .filter((group) => group.targets.length > 0);
+}

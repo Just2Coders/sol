@@ -174,6 +174,15 @@ Ojo con `extras` de la query relacional de drizzle: reescribe las referencias de
 columna apuntándolas a la tabla exterior, así que una subconsulta correlacionada
 contra otras tablas **no** se puede escribir ahí.
 
+Y ojo con la trampa hermana en `db.select()`: cuando el `FROM` tiene **una sola
+tabla**, drizzle renderiza las columnas sin cualificar. Un `sql` con
+`exists (select 1 from ${products} where ${products.supplierId} = ${suppliers.id})`
+sale como `where "supplier_id" = "id"`, y dentro de la subconsulta las dos
+resuelven contra `products`. No es un error de SQL —la consulta corre— sino una
+respuesta constante y equivocada, que es peor. Cuando haga falta correlacionar,
+o se escriben los identificadores a mano, o se parte en consultas separadas y se
+cruza en memoria (lo que hace `getSupplierOptions` con `hasInstallables`).
+
 Los filtros del catálogo viven en la **URL**, no en estado de cliente
 (`lib/catalog/filters.ts` los traduce en ambos sentidos): así una búsqueda se
 comparte, el botón atrás deshace filtro a filtro y la página se sigue
@@ -242,6 +251,13 @@ Definido en [`lib/db/schema.ts`](../lib/db/schema.ts). Entidades principales:
   **installation_offers** dice qué servicio se ofrece junto a qué producto o kit,
   y cruza de proveedor cuando el servicio no es `OWN`. Sin filas ahí, un servicio
   `ANY` se sigue vendiendo solo; los otros dos solo existen pegados a su equipo.
+  Se administran en la ficha del servicio (`/admin/services/[id]`), en una sección
+  **aparte** del formulario y no dentro como las zonas de un proveedor: cerrar un
+  servicio a `OWN` con ofertas ajenas se rechaza con un «quita esas ofertas
+  primero», y si las casillas vivieran en el mismo formulario el select de alcance
+  las escondería justo cuando hay que quitarlas. La regla del alcance se valida en
+  las dos puntas — al escribir (`setInstallationOffers`) y al leer
+  (`getInstallationsFor`).
 - **orders** — lo que el cliente compró y pagó: un número, un total y **un solo
   pago**, aunque lleve cosas de varios proveedores. No tiene `supplierId`.
 - **order_suppliers** — la parte del pedido que le toca a cada proveedor, con su
