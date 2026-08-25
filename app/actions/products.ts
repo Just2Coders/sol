@@ -8,6 +8,7 @@ import { db } from "@/lib/db";
 import { kitItems, products, suppliers } from "@/lib/db/schema";
 import { verifyAdmin } from "@/lib/dal";
 import { openLedger } from "@/lib/inventory/service";
+import { openPriceTimeline, recordPriceChange } from "@/lib/pricing/service";
 import { deleteBlobs, removedImages } from "@/lib/blob";
 import {
   idSchema,
@@ -107,6 +108,9 @@ export async function createProduct(
     actorUserId: admin.userId,
     onBehalfOfSupplierId: data.supplierId,
   });
+  // Igual que el stock: el precio nace con su línea de tiempo, no solo con la
+  // columna. Sin esto el item queda sin historia y la invariante se rompe.
+  await openPriceTimeline("PRODUCT", created.id, data.priceUsd, admin.userId);
 
   revalidateProducts();
   redirect("/admin/products");
@@ -116,7 +120,7 @@ export async function updateProduct(
   _state: ProductFormState,
   formData: FormData,
 ): Promise<ProductFormState> {
-  await verifyAdmin();
+  const admin = await verifyAdmin();
 
   const id = idSchema.safeParse(formData.get("id"));
   if (!id.success) return { message: "Producto inválido." };
@@ -165,6 +169,9 @@ export async function updateProduct(
     .update(products)
     .set({ ...data, slug, updatedAt: new Date() })
     .where(eq(products.id, id.data));
+
+  // La columna es la caché; la fila es la verdad. Solo escribe si cambió.
+  await recordPriceChange("PRODUCT", id.data, data.priceUsd, admin.userId);
 
   // Las imágenes que el admin quitó del formulario ya no las referencia nadie.
   await deleteBlobs(removedImages(current.images, data.images));

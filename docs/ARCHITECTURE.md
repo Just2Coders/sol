@@ -15,7 +15,7 @@
 |---|---|
 | Framework | Next.js 16 (App Router, React Server Components) + React 19 |
 | Lenguaje | TypeScript en modo `strict` |
-| Base de datos | PostgreSQL en **Neon** (driver serverless HTTP) |
+| Base de datos | PostgreSQL en **Neon** (driver serverless por WebSocket) |
 | ORM | **Drizzle ORM** + `drizzle-kit` para migraciones |
 | Validación | **Zod** v4 |
 | Auth | Sesión propia por **JWT** (`jose`) en cookie httpOnly + `bcryptjs` |
@@ -69,10 +69,18 @@ lib/                    Lógica de servidor reutilizable (NO específica de una 
     adjustments.ts      Qué recuento y qué ventana son válidos (puro)
     service.ts          El ÚNICO sitio que escribe stock: movimientos,
                         reposiciones y el saldo recalculado desde el libro
+    reservation-plan.ts De un carrito a qué unidades retener, con los kits
+                        expandidos a sus piezas (puro)
+    reservations.ts     Retener, consumir y soltar; la sentencia condicional
+                        que impide vender dos veces la última unidad
+    sweep.ts            Lo que hace el cron: soltar vencidas, caducar
+                        anuncios y promover precios
     queries.ts          El inventario de un producto para el panel
   pricing/
     effective.ts        El precio efectivo, el programado y qué hay que
                         promover (puro)
+    service.ts          El ÚNICO sitio que escribe precio: abre la línea de
+                        tiempo, anota un cambio y promueve los vencidos
   products/queries.ts   Lecturas de productos (panel admin)
   kits/queries.ts       Lecturas de kits con sus componentes (panel admin)
   services/
@@ -414,6 +422,48 @@ npm run db:studio    # UI de Drizzle para inspeccionar la BD
 npm run db:seed      # cargar datos iniciales
 npm run check:inventory  # las invariantes del inventario, contra la BD apuntada
 ```
+
+### El driver va por WebSocket porque hacen falta transacciones
+
+`lib/db/index.ts` usa `neon-serverless` con un `Pool`, no `neon-http`. La razón
+es una sola: el driver HTTP **no soporta transacciones** —lo lanza
+explícitamente— y crear un pedido son varias escrituras que o entran todas o no
+entra ninguna: la orden, sus partes, sus líneas y la reserva de cada producto.
+
+Un cliente y no dos. La regla "HTTP para leer, Pool para escribir" se rompe la
+primera vez que alguien escribe desde el sitio equivocado, y el fallo sería
+silencioso. El Pool vive a nivel de módulo: en Fluid Compute la instancia se
+reutiliza, así que abrirlo se paga una vez. Un script suelto que importe `db`
+tiene que terminar con `process.exit`, o se queda esperando al socket.
+
+`DATABASE_URL` apunta al endpoint `-pooler` de Neon (PgBouncer en modo
+transacción). Verificado que soporta `BEGIN/COMMIT` con rollback real y
+sentencias parametrizadas; si algún día aparecen errores de *prepared statement*,
+la salida es el endpoint directo.
+
+### Retener no es vender
+
+Entre que se crea un pedido y se confirma el Zelle pasan días. Si el stock bajara
+al confirmar, dos personas comprarían el último panel; si bajara al hacer
+checkout, un carrito abandonado mataría esa unidad para siempre. Por eso se
+**retiene con vencimiento**: sube `products.reserved`, no baja `stock`, y lo
+vendible es la resta.
+
+La puerta de la concurrencia es la condición del `UPDATE`, no una lectura previa:
+
+```sql
+update products set reserved = reserved + $n
+ where id = $id and stock - reserved >= $n
+```
+
+Entre un `SELECT` que dice "queda uno" y el `UPDATE` que lo aparta cabe otra
+petición entera. Así la comprobación y la escritura son el mismo acto, y quien
+llega segundo se lleva cero filas. Está verificado con dos reservas simultáneas
+de la última unidad: gana exactamente una.
+
+Las intenciones se piden **ordenadas por `productId`** (`reservationPlan`). No es
+cosmético: dos checkouts que retuvieran A y B en órdenes distintos dentro de
+sendas transacciones se bloquearían mutuamente.
 
 ### Las reglas del inventario viven en funciones puras
 

@@ -358,10 +358,10 @@ Decisiones clave:
       con más consecuencias del formulario. Y no se puede cerrar a `OWN` —ni
       mudar de proveedor— un servicio ya ofrecido sobre equipo ajeno, porque
       dejaría en el catálogo ofertas que no se podrían cumplir.*
-- [ ] Aviso en el formulario del servicio: si el proveedor no tiene productos ni
+- [x] Aviso en el formulario del servicio: si el proveedor no tiene productos ni
       kits, un servicio `OWN` no se podrá vender nunca. No se prohíbe —puede
       estar a punto de cargar su catálogo—, se avisa.
-- [ ] Asignar a qué productos/kits se ofrece cada servicio (`installation_offers`).
+- [x] Asignar a qué productos/kits se ofrece cada servicio (`installation_offers`).
       La validación ya no es "solo items del mismo proveedor": un servicio `OWN`
       solo puede apuntar a items de su proveedor; uno `PLATFORM` o `ANY`, a los de
       cualquiera.
@@ -378,13 +378,13 @@ Decisiones clave:
 - [x] Página de detalle de producto (galería, specs, proveedor) y de kit (qué incluye).
 - [x] Ficha del servicio en `/catalog/services/[slug]`: la instalación contratada
       sola, con cómo se cobra (fijo o por unidad de obra).
-- [ ] Los servicios entran al **listado**: tercera rama de la unión y contador
+- [x] Los servicios entran al **listado**: tercera rama de la unión y contador
       propio en el selector (Todo · Kits · Productos · Instalación). Hoy la ficha
       existe y se llega a ella desde el equipo, pero no sale en la grilla; por eso
       `CATALOG_TYPES` (el filtro) sigue teniendo dos valores y `PURCHASABLE_TYPES`
       (lo que cabe en el carrito) tiene tres. **Solo entran los `ANY`**: son los
       únicos que se contratan sin que la plataforma sepa sobre qué equipo van.
-- [ ] La ficha de un servicio `OWN` o `PLATFORM` deja de vender a ciegas. La
+- [x] La ficha de un servicio `OWN` o `PLATFORM` deja de vender a ciegas. La
       página sigue existiendo —la enlazan las fichas de los equipos—, pero el
       bloque de compra solo aparece si el visitante trae el equipo: uno que
       encaje en el carrito, o uno suyo de un pedido pagado (cuando exista «Mis
@@ -393,19 +393,19 @@ Decisiones clave:
       *Es lo único incoherente que hay hoy: un servicio se vende suelto a
       cualquiera aunque su proveedor solo quiera trabajar sobre lo suyo. No es
       una decisión que haya que tomar aparte — sale del propio alcance.*
-- [ ] Lo agotado deja de ser un callejón: la tarjeta de un producto sin stock pero
+- [x] Lo agotado deja de ser un callejón: la tarjeta de un producto sin stock pero
       con reposición anunciada dice hasta cuándo va la ventana ("vuelve aprox. la
       semana del 12"), y la ficha ofrece el aviso de `stock_alerts` en lugar del
       botón de compra. Hoy los agotados ya salen en el listado, así que es enriquecer
       lo que hay y no añadir una rama. **Va después de la Etapa 5.5.**
 - [ ] Filtro "incluir lo que llega pronto" en la barra del catálogo, apagado por
       defecto: lo primero que se ve es lo que se puede comprar hoy.
-- [ ] **Un kit también llega pronto.** Su disponibilidad es derivada, así que la
+- [x] **Un kit también llega pronto.** Su disponibilidad es derivada, así que la
       futura también lo es: un kit está "por volver" cuando lo único que le falta
       son piezas con reposición anunciada, y su ventana es la **más tardía** de
       ellas —llega cuando llega la última—. Si a una pieza que falta no le espera
       nada, el kit no promete nada: sale agotado y punto.
-- [ ] **El precio futuro no se enseña en el catálogo.** `price_schedules` lo conoce
+- [x] **El precio futuro no se enseña en el catálogo.** `price_schedules` lo conoce
       y el proveedor lo programa, pero anunciar "baja a 180 el día 15" mata la venta
       de hoy y convierte una previsión en una promesa de precio. Se ve en el portal
       del proveedor y en el admin; el comprador ve el precio de hoy y ya. _Si algún
@@ -421,28 +421,33 @@ están escritos, así que se escriben una sola vez ya sabiendo que hay reservas 
 schedules. Al revés habría que reescribirlos y migrar pedidos reales. Ver
 «Inventario, reposiciones y precio en el tiempo» más abajo.
 
-- [ ] Schema y migraciones con **backfill**: un movimiento `OPENING` por producto
+- [x] Schema y migraciones con **backfill**: un movimiento `OPENING` por producto
       con el stock de hoy y una fila de `price_schedules` por producto/kit/servicio
       con su precio actual. Desde el primer minuto las dos invariantes se cumplen y
       se pueden testear — a diferencia de la `0003`, aquí `products` **no** está
       vacía, así que ninguna columna nueva entra `NOT NULL` sin default.
-- [ ] `lib/inventory/` — el único sitio que escribe stock. Ajuste manual, anuncio y
+- [x] `lib/inventory/` — el único sitio que escribe stock. Ajuste manual, anuncio y
       llegada de reposición, y las primitivas de reserva. Toda mutación recibe el
       ámbito de proveedor como parámetro (hoy siempre "el admin actuando como X"),
       para que abrir el portal después sea vestir formularios y no reescribirlos.
-- [ ] `lib/pricing/` — precio efectivo, precio programado y promoción de vencidos.
-- [ ] Disponibilidad de un kit, que hoy no existe: es la derivada
+- [x] `lib/pricing/` — precio efectivo, precio programado y promoción de vencidos.
+- [x] Disponibilidad de un kit, que hoy no existe: es la derivada
       `min(floor((stock − reserved) / cantidad))` sobre sus piezas. **Es un bug de
       hoy**, no de este cambio: `catalog/queries.ts` pone `stock: 1` en la rama de
       kits "para cuadrar la unión" y `toItem` solo marca agotado si es `PRODUCT`, así
       que ahora mismo se puede vender un kit cuyos paneles se acabaron. Vender un kit
       descuenta sus **componentes**, nunca el kit.
-- [ ] Cron en Vercel (hace falta `vercel.ts`, que el repo todavía no tiene): promover
+- [x] Cron en Vercel (hace falta `vercel.ts`, que el repo todavía no tiene): promover
       precios vencidos, liberar reservas caducadas y caducar anuncios pasados de
       ventana. Idempotente — se puede correr dos veces sin descuadrar nada.
-- [ ] Admin mínimo: ajustar stock con motivo, anunciar y resolver una reposición,
-      programar un precio. El histórico rico y el panel de fiabilidad son Etapa 8.
-- [ ] `suppliers.reservation_hold_hours` en la ficha del proveedor, vacío por
+- [x] Admin mínimo del inventario: ajustar stock con motivo, anunciar y resolver
+      una reposición, y el histórico del libro mayor. El panel de fiabilidad del
+      proveedor es Etapa 8.
+- [ ] **Programar un precio desde el panel.** `price_schedules` ya acepta filas
+      con fecha futura y el cron las promueve, pero la única forma de crear una
+      es guardar la ficha —y eso escribe "desde ya"—. Falta la pantalla que deje
+      decir "a partir del 15". Es lo último que le queda al bloque de precios.
+- [x] `suppliers.reservation_hold_hours` en la ficha del proveedor, vacío por
       defecto (= las 72 h de la plataforma). Debajo, lo único que hay que decirle:
       por debajo del suelo del medio de pago más lento habilitado, sus productos se
       pueden reservar pero no llegar a pagar. No se prohíbe, se avisa — es su
