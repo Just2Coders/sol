@@ -55,6 +55,17 @@ export async function reserveForPart({
 }): Promise<ReserveResult> {
   if (intents.length === 0) return { ok: true };
 
+  // Antes de retener, suelta lo que ya venció **de estos productos**.
+  //
+  // Sin esto, la corrección dependería de cada cuánto corre el cron — y en el
+  // plan Hobby de Vercel eso es una vez al día, así que un carrito abandonado
+  // bloquearía una unidad hasta 24 h de más. Con esto, quien intenta comprar
+  // libera él mismo lo caducado y el cron pasa a ser red de seguridad.
+  await releaseExpiredForProducts(
+    intents.map((intent) => intent.productId),
+    now,
+  );
+
   // Absoluto y escrito una vez: cambiar el ajuste del proveedor mañana no mueve
   // esta reserva, igual que el snapshot de precio de `order_items`.
   const expiresAt = reservationExpiresAt(now, supplierHoldHours);
@@ -178,6 +189,37 @@ export async function releaseReservations(orderSupplierId: string): Promise<numb
       and(
         eq(stockReservations.orderSupplierId, orderSupplierId),
         eq(stockReservations.status, "HELD"),
+      ),
+    )
+    .returning({ productId: stockReservations.productId });
+
+  for (const productId of new Set(released.map((row) => row.productId))) {
+    await syncReservedBalance(productId);
+  }
+  return released.length;
+}
+
+/**
+ * Suelta lo vencido **de unos productos concretos**.
+ *
+ * La versión acotada de `releaseExpiredReservations`, para el camino caliente:
+ * el checkout solo necesita desbloquear lo que va a pedir, no barrer el catálogo
+ * entero.
+ */
+export async function releaseExpiredForProducts(
+  productIds: string[],
+  now = new Date(),
+): Promise<number> {
+  if (productIds.length === 0) return 0;
+
+  const released = await db
+    .update(stockReservations)
+    .set({ status: "RELEASED", resolvedAt: now })
+    .where(
+      and(
+        eq(stockReservations.status, "HELD"),
+        lt(stockReservations.expiresAt, now),
+        inArray(stockReservations.productId, productIds),
       ),
     )
     .returning({ productId: stockReservations.productId });
