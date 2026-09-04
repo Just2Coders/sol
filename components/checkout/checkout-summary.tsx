@@ -14,12 +14,17 @@ import { formatDeadline, formatUsd } from "@/lib/utils";
  * Los precios son los que manda el servidor, no los que guardó el carrito. Que
  * no coincidan es raro pero posible —una subida de precio mientras la pestaña
  * estaba abierta—, y en ese caso el que vale es este.
+ *
+ * Quien lo pinta comprueba antes que haya grupos: una línea que no se pudo
+ * validar tampoco se pudo agrupar, así que un carrito entero en problemas dejaría
+ * aquí una tarjeta vacía con un total de cero. Lo que hay que enseñar entonces es
+ * el problema, que ya dice qué quitar.
  */
 export function CheckoutSummary({ preview }: { preview: CheckoutPreview }) {
   const { groups, window: hold } = preview;
 
   return (
-    <section className="border-border bg-canvas rounded-md border p-6">
+    <section className="border-border bg-muted rounded-md border p-6">
       <h2 className="text-muted-foreground text-label font-mono uppercase">
         tu pedido
       </h2>

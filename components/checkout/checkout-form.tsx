@@ -218,10 +218,14 @@ export function CheckoutForm({
       </div>
 
       <aside className="grid gap-4">
-        {preview ? (
-          <CheckoutSummary preview={preview} />
-        ) : (
+        {preview === null && (
           <p className="text-muted-foreground text-body-sm">Calculando tu pedido…</p>
+        )}
+        {/* Sin grupos no hay resumen que pintar: si todas las líneas tienen algo
+            que las frena, ninguna llegó a agruparse y la tarjeta saldría vacía.
+            Los problemas de abajo son entonces la pantalla entera. */}
+        {preview !== null && preview.groups.length > 0 && (
+          <CheckoutSummary preview={preview} />
         )}
 
         {problems.length > 0 && (
