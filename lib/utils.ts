@@ -79,6 +79,28 @@ export function formatUsd(value: number): string {
   return Number.isInteger(value) ? usdWhole.format(value) : usdCents.format(value);
 }
 
+/**
+ * Un vencimiento como se le dice a alguien: "jueves 4 de septiembre, 18:00".
+ *
+ * La zona horaria va fijada y no se toma del navegador. No es un descuido: la
+ * misma fecha la pinta a veces el servidor (el detalle del pedido, que es RSC) y
+ * a veces el cliente (el resumen del checkout), y dos husos distintos serían un
+ * error de hidratación y, peor, dos horas distintas para el mismo plazo. Solaris
+ * opera en Cuba, que tiene una sola.
+ */
+const deadlineFormat = new Intl.DateTimeFormat("es", {
+  weekday: "long",
+  day: "numeric",
+  month: "long",
+  hour: "2-digit",
+  minute: "2-digit",
+  timeZone: "America/Havana",
+});
+
+export function formatDeadline(date: Date): string {
+  return deadlineFormat.format(date);
+}
+
 // Acepta solo rutas internas ("/checkout", nunca "//evil.com" ni "https://...")
 // para usar valores de ?from= como destino de redirección sin open redirect.
 export function safeInternalPath(value: unknown): string | null {

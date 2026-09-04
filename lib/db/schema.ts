@@ -441,8 +441,41 @@ export const orders = pgTable("orders", {
   // **todos** los proveedores del pedido llegan hasta ahí.
   zoneId: uuid("zone_id").references(() => zones.id),
   status: orderStatus("status").notNull().default("PENDING_PAYMENT"),
+  /**
+   * Lo próximo que le va a pasar al pedido: el **más temprano** de los
+   * vencimientos de sus reservas vivas (`orderExpiresAt` en `lib/inventory/
+   * holds.ts`).
+   *
+   * Es el único plazo que ve el comprador —uno con tres proveedores tendría tres
+   * fechas y eso no se le puede enseñar a nadie— y de él salen los otros dos sin
+   * escribirlos: hasta cuándo puede pagar y hasta cuándo puede decidir si algo
+   * se cayó. Llegar ahí tumba **la parte cuya reserva era**, no el pedido, así
+   * que el mínimo se recalcula sobre las que quedan y la fecha se aleja: solo
+   * puede alargarse.
+   *
+   * Un carrito solo de servicios no retiene nada y el mínimo saldría vacío: ahí
+   * manda el default de la plataforma. Es el caso que se olvida y deja un pedido
+   * sin vencimiento, así que la columna es `NOT NULL` a propósito.
+   */
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
   subtotalUsd: numeric("subtotal_usd", { precision: 10, scale: 2, mode: "number" }).notNull(),
   totalUsd: numeric("total_usd", { precision: 10, scale: 2, mode: "number" }).notNull(),
+  /**
+   * La última cifra que el comprador aceptó pagar.
+   *
+   * Nace igual que `totalUsd` y se separa de él en cuanto una parte se cae: ahí
+   * conviven tres números que dicen tres cosas distintas y que nunca se pisan
+   * —lo que se pidió (`totalUsd`, inmutable), lo que se pagaría hoy (la suma de
+   * las partes vivas, que se calcula y no se guarda) y esto—. Con la
+   * comparación entre el vivo y este basta para saber si hay algo que decidir,
+   * sin un estado nuevo que mantener sincronizado. Mientras difieran, las
+   * instrucciones de pago se congelan.
+   */
+  acknowledgedTotalUsd: numeric("acknowledged_total_usd", {
+    precision: 10,
+    scale: 2,
+    mode: "number",
+  }).notNull(),
   contactName: text("contact_name").notNull(),
   contactPhone: text("contact_phone").notNull(),
   deliveryAddress: text("delivery_address"),
@@ -475,6 +508,15 @@ export const orderSuppliers = pgTable(
       .references(() => suppliers.id),
     subtotalUsd: numeric("subtotal_usd", { precision: 10, scale: 2, mode: "number" }).notNull(),
     status: fulfillmentStatus("status").notNull().default("PENDING"),
+    /**
+     * Hasta cuándo tiene el proveedor para aceptar su parte:
+     * `min(24 h, su propio hold)`. No tiene sentido retener tres días de
+     * mercancía para alguien que todavía no ha dicho que sí.
+     *
+     * Es lo que impide que un proveedor callado bloquee un pedido ajeno: al
+     * vencer cae **su** parte, se libera su stock y el resto sigue.
+     */
+    confirmationDueAt: timestamp("confirmation_due_at", { withTimezone: true }).notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
