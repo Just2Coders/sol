@@ -21,22 +21,29 @@ export type KitOffer = {
   capacityKwh: number;
   /** Distintivo sobre la foto. Solo uno por kit; hoy viene fijo en los datos. */
   badge?: string;
-  /** Rótulo del hueco de foto, mientras el proveedor no mande la suya. */
+  /** Texto alternativo de la foto. */
   photo: string;
+  /** Foto del kit instalado, subida a Blob. Banco de imágenes mientras el proveedor no mande la suya. */
+  photoUrl: string;
 };
 
 /**
- * ⚠️ MOCK — ni los proveedores ni los precios son reales.
+ * ⚠️ MOCK — ni los proveedores ni los precios son reales. Las fotos tampoco:
+ * son banco de imágenes (Unsplash) subido a Blob, no la instalación real de
+ * ningún proveedor.
  *
  * Existe para poder juzgar la forma de la sección; el contenido va rotulado
  * como ejemplo allá donde se muestra. Cuando haya proveedores de verdad, esto
  * se reemplaza por una query sobre `suppliers` + `kits` sin tocar la UI: la
- * firma de `getKitOffers()` ya es la definitiva.
+ * firma de `getKitOffers()` ya es la definitiva — y `photoUrl` pasa a ser la
+ * foto que mande cada proveedor.
  *
  * Los tres proveedores se repiten en los tres kits a propósito: es lo que hace
  * legible el cambio de pestaña — lo que se mueve es el precio y el respaldo,
  * no el reparto de nombres.
  */
+const BLOB_HOST = "https://9lphmnrf8luyomrq.public.blob.vercel-storage.com";
+
 const MOCK_OFFERS: KitOffer[] = [
   {
     kitSlug: "kit-basico",
@@ -46,7 +53,8 @@ const MOCK_OFFERS: KitOffer[] = [
     backup: "4–6 h sin sol",
     capacityKwh: 1.6,
     badge: "más elegido",
-    photo: "[foto] Kit básico instalado — SolarCaribe",
+    photo: "Kit básico instalado — SolarCaribe",
+    photoUrl: `${BLOB_HOST}/landing/kit-basico-solarcaribe.jpg`,
   },
   {
     kitSlug: "kit-basico",
@@ -55,7 +63,8 @@ const MOCK_OFFERS: KitOffer[] = [
     fromUsd: 820,
     backup: "4–5 h sin sol",
     capacityKwh: 1.6,
-    photo: "[foto] Kit básico instalado — Techo Solar Habana",
+    photo: "Kit básico instalado — Techo Solar Habana",
+    photoUrl: `${BLOB_HOST}/landing/kit-basico-techo-solar-habana.jpg`,
   },
   {
     kitSlug: "kit-basico",
@@ -64,7 +73,8 @@ const MOCK_OFFERS: KitOffer[] = [
     fromUsd: 760,
     backup: "4–6 h sin sol",
     capacityKwh: 1.7,
-    photo: "[foto] Kit básico instalado — Energía Oriente",
+    photo: "Kit básico instalado — Energía Oriente",
+    photoUrl: `${BLOB_HOST}/landing/kit-basico-energia-oriente.jpg`,
   },
 
   {
@@ -75,7 +85,8 @@ const MOCK_OFFERS: KitOffer[] = [
     backup: "8–12 h sin sol",
     capacityKwh: 3.2,
     badge: "más elegido",
-    photo: "[foto] Kit casa instalado — SolarCaribe",
+    photo: "Kit casa instalado — SolarCaribe",
+    photoUrl: `${BLOB_HOST}/landing/kit-casa-solarcaribe.jpg`,
   },
   {
     kitSlug: "kit-casa",
@@ -84,7 +95,8 @@ const MOCK_OFFERS: KitOffer[] = [
     fromUsd: 1510,
     backup: "8–10 h sin sol",
     capacityKwh: 3.2,
-    photo: "[foto] Kit casa instalado — Techo Solar Habana",
+    photo: "Kit casa instalado — Techo Solar Habana",
+    photoUrl: `${BLOB_HOST}/landing/kit-casa-techo-solar-habana.jpg`,
   },
   {
     kitSlug: "kit-casa",
@@ -93,7 +105,8 @@ const MOCK_OFFERS: KitOffer[] = [
     fromUsd: 1390,
     backup: "9–12 h sin sol",
     capacityKwh: 3.3,
-    photo: "[foto] Kit casa instalado — Energía Oriente",
+    photo: "Kit casa instalado — Energía Oriente",
+    photoUrl: `${BLOB_HOST}/landing/kit-casa-energia-oriente.jpg`,
   },
 
   {
@@ -104,7 +117,8 @@ const MOCK_OFFERS: KitOffer[] = [
     backup: "el día entero",
     capacityKwh: 6.4,
     badge: "más elegido",
-    photo: "[foto] Kit negocio instalado — SolarCaribe",
+    photo: "Kit negocio instalado — SolarCaribe",
+    photoUrl: `${BLOB_HOST}/landing/kit-negocio-solarcaribe.jpg`,
   },
   {
     kitSlug: "kit-negocio",
@@ -113,7 +127,8 @@ const MOCK_OFFERS: KitOffer[] = [
     fromUsd: 2840,
     backup: "18–24 h sin sol",
     capacityKwh: 6.4,
-    photo: "[foto] Kit negocio instalado — Techo Solar Habana",
+    photo: "Kit negocio instalado — Techo Solar Habana",
+    photoUrl: `${BLOB_HOST}/landing/kit-negocio-techo-solar-habana.jpg`,
   },
   {
     kitSlug: "kit-negocio",
@@ -122,7 +137,8 @@ const MOCK_OFFERS: KitOffer[] = [
     fromUsd: 2690,
     backup: "20–24 h sin sol",
     capacityKwh: 6.6,
-    photo: "[foto] Kit negocio instalado — Energía Oriente",
+    photo: "Kit negocio instalado — Energía Oriente",
+    photoUrl: `${BLOB_HOST}/landing/kit-negocio-energia-oriente.jpg`,
   },
 ];
 

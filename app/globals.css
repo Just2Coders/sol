@@ -372,6 +372,12 @@
      resto de este bloque. La pausa larga entre cabeceos es deliberada: un
      bucle sin reposo se convierte en ruido a los diez segundos. */
   --animate-nudge: nudge 2.6s cubic-bezier(0.22, 1, 0.36, 1) infinite;
+
+  /* La entrada del hero: título, entradilla y CTA suben con un fundido, uno
+     detrás de otro. Es la única secuencia con stagger de toda la página —el
+     resto entra de una vez o no anima— porque es lo primero que ve quien
+     llega, el único sitio donde ese gasto de atención está justificado. */
+  --animate-rise: rise 500ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 @keyframes nudge {
@@ -385,10 +391,25 @@
   }
 }
 
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 /* Quien pide menos movimiento se queda con el galón quieto: la pista sigue
-   ahí, deja de repetirse. */
+   ahí, deja de repetirse. Al hero le pasa lo mismo: sin animación se queda en
+   su estado final —visible de entrada—, no atascado en opacity: 0. */
 @media (prefers-reduced-motion: reduce) {
   .animate-nudge {
+    animation: none;
+  }
+  .animate-rise {
     animation: none;
   }
 }

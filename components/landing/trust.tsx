@@ -1,51 +1,43 @@
+import Image from "next/image";
 import { CheckCircle } from "reicon-react";
 
 import { FlatCta } from "./flat-cta";
-import { PhotoHole } from "./photo-hole";
 import { SectionHeading } from "./section-heading";
-import { TRUST_TEAMS, TRUST_TERMS, type TrustTeam } from "./trust-data";
+import { TrustPhotoCarousel } from "./trust-photo-carousel";
+import { TRUST_TEAMS, type TrustTeam } from "./trust-data";
 
 /**
  * "Quién va a entrar a tu casa".
  *
- * Un solo bloque de tinta con todo dentro y las piezas separadas por un pelo:
- * el fondo del contenedor es el foreground y los hijos van en el fondo de
- * página con `gap-px`, así que las líneas que dividen la sección no son bordes
- * —son el propio material asomando por las juntas—. Por eso los filetes casan
- * perfecto entre columnas de distinto alto, que es donde un `border` siempre
- * termina desalineado.
+ * Cada equipo ocupa una pantalla entera —texto y foto a la vez, lado a lado—
+ * en vez de competir por espacio con el otro equipo a media altura. Por eso el
+ * bloque completo es `h-screen`: el visitante ve un proveedor por pantalla,
+ * texto y foto juntos, y pasa al siguiente con un solo empujón de scroll.
+ *
+ * Por eso el `px-gutter` no vive en la sección sino en cada bloque de texto:
+ * la foto tiene que poder sangrar borde a borde, igual que el hero.
  *
  * Los dos equipos usan la misma anatomía y se diferencian en cómo cuentan: el
  * primero en filas de datos consultables, el segundo en lista de lo que
- * incluye. Y la tira de condiciones cierra el bloque desde dentro, no como una
- * sección aparte: son las reglas del mismo trato.
+ * incluye.
  *
  * ⚠️ Los equipos son de ejemplo — ver `./trust-data`.
  */
 export function Trust() {
   return (
-    <section className="bg-background px-gutter py-section-md">
-      <SectionHeading
-        eyebrow="quién instala"
-        title="Quién va a entrar a tu casa."
-        body="Un equipo con nombre, provincia y garantía — no un número de teléfono suelto."
-      />
+    <section className="bg-background py-section-md">
+      <div className="px-gutter">
+        <SectionHeading
+          eyebrow="quién instala"
+          title="Quién va a entrar a tu casa."
+          body="Un equipo con nombre, provincia y garantía — no un número de teléfono suelto."
+        />
+      </div>
 
-      <div className="bg-foreground mt-14 flex flex-col gap-px">
+      <div className="mt-14 flex flex-col">
         {TRUST_TEAMS.map((team) => (
           <TeamBlock key={team.headline} team={team} />
         ))}
-
-        <dl className="bg-background flex flex-col gap-8 pt-8 pb-2 md:flex-row md:gap-12">
-          {/* {TRUST_TERMS.map((term) => (
-            <div key={term.question} className="flex flex-col gap-1.5 md:flex-1">
-              <dt className="text-label tracking-mono-sm text-foreground font-mono uppercase">
-                {term.question}
-              </dt>
-              <dd className="text-body-xs text-foreground">{term.answer}</dd>
-            </div>
-          ))} */}
-        </dl>
       </div>
     </section>
   );
@@ -53,18 +45,12 @@ export function Trust() {
 
 function TeamBlock({ team }: { team: TrustTeam }) {
   return (
-    <article className="flex flex-col gap-px md:flex-row">
-      {/* La columna de texto no lleva padding izquierdo: arranca en el mismo
-          gutter que el titular de la sección, así el bloque no se lee como una
-          caja metida dentro de otra. */}
-      <div className="bg-background flex w-full flex-col gap-5 py-10 md:w-110 md:shrink-0 md:pr-10">
-        <p className="text-label tracking-mono-xs text-foreground font-mono">
-          {team.dateline}
-        </p>
-        <h3 className="text-heading-1 text-foreground">{team.headline}</h3>
+    <article className="flex h-screen flex-col md:flex-row">
+      <div className="px-gutter flex shrink-0 flex-col justify-center gap-7 py-10 md:w-150 md:shrink-0">
+        <h3 className="text-display-3 text-foreground">{team.headline}</h3>
 
         <div>
-          <FlatCta href="/sell" size="sm">
+          <FlatCta href="/sell" size="md">
             {team.cta}
           </FlatCta>
         </div>
@@ -74,38 +60,42 @@ function TeamBlock({ team }: { team: TrustTeam }) {
             {team.facts.map((fact) => (
               <li
                 key={fact}
-                className="border-foreground text-body-xs text-foreground border-t py-3.5 last:border-b"
+                className="border-foreground text-body-sm text-foreground border-t py-4.5 last:border-b"
               >
                 {fact}
               </li>
             ))}
           </ul>
         ) : (
-          <ul className="mt-2 flex flex-col gap-3.5">
+          <ul className="mt-2 flex flex-col gap-5">
             {team.facts.map((fact) => (
-              <li key={fact} className="flex items-center gap-2.5">
+              <li key={fact} className="flex items-center gap-3">
                 <CheckCircle
                   aria-hidden
-                  className="text-foreground size-4 shrink-0"
+                  className="text-foreground size-5 shrink-0"
                 />
-                <span className="text-body-xs text-foreground">{fact}</span>
+                <span className="text-body-sm text-foreground">{fact}</span>
               </li>
             ))}
           </ul>
         )}
       </div>
 
-      {/* Un plano grande o una tira de cuatro: la misma altura mínima en los dos
-          casos, para que los dos equipos ocupen el mismo peso en la página. */}
-      <div className="flex flex-1 flex-col gap-px sm:flex-row">
-        {team.photos.map((photo) => (
-          <PhotoHole
-            key={photo}
-            label={photo}
-            align={team.photos.length > 1 ? "bottom" : "center"}
-            className="min-h-105 flex-1"
+      {/* La foto llena el resto de la pantalla que ya reservó el `h-screen`
+          del artículo — no tiene alto propio. Varias fotos son un carrusel:
+          una a la vez entera, no cuatro lonchas cortadas. */}
+      <div className="relative min-h-0 flex-1">
+        {team.photos.length > 1 ? (
+          <TrustPhotoCarousel photos={team.photos} />
+        ) : (
+          <Image
+            src={team.photos[0].url}
+            alt={team.photos[0].alt}
+            fill
+            sizes="100vw"
+            className="object-cover"
           />
-        ))}
+        )}
       </div>
     </article>
   );
