@@ -1,5 +1,7 @@
 import { cn } from "@/lib/utils";
 
+import { Reveal } from "./reveal";
+
 /**
  * La entrada de una sección de la home: antetítulo mono, titular y una línea de
  * cuerpo, con la salida lateral —cuando la hay— alineada a la última línea del
@@ -27,7 +29,7 @@ export function SectionHeading({
   className?: string;
 }) {
   return (
-    <div
+    <Reveal
       className={cn(
         "flex flex-col items-start justify-between gap-8 md:flex-row md:items-end",
         className,
@@ -43,6 +45,6 @@ export function SectionHeading({
         {body && <p className="text-body text-foreground max-w-112">{body}</p>}
       </div>
       {action && <div className="shrink-0">{action}</div>}
-    </div>
+    </Reveal>
   );
 }

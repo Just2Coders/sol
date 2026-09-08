@@ -1,23 +1,25 @@
 /**
- * ⚠️ CONTENIDO DE EJEMPLO — ni los equipos ni sus cifras son reales.
+ * ⚠️ CONTENIDO DE EJEMPLO — ni los equipos ni sus cifras son reales. Las
+ * fotos tampoco: son banco de imágenes (Unsplash) subido a Blob, no la obra
+ * de ningún equipo real. La página ya no lo rotula como ejemplo en pantalla
+ * (se sacó el dateline a pedido) — la única señal de que esto es mock queda
+ * en este comentario y en el código.
  *
  * La sección de confianza es el hueco más grave de la landing: el visitante
  * manda cuatro cifras a un desconocido por una instalación física en su casa y
  * hoy la página no le enseña ni un nombre. Estos dos equipos existen para poder
- * juzgar la forma; van rotulados como ejemplo en la propia página —el dateline
- * lo dice— para que nadie los confunda con un proveedor dado de alta.
+ * juzgar la forma.
  *
  * Cuando existan proveedores de verdad, esto se sustituye por una query sobre
  * `suppliers` + `supplier_zones` en `lib/`, y las fotos por las que manden
  * ellos. Mientras tanto: ni una garantía que nadie ha firmado.
- *
- * Las condiciones (`TRUST_TERMS`) sí son afirmaciones que el producto sostiene
- * hoy y no llevan marca de ejemplo.
  */
 
+const BLOB_HOST = "https://9lphmnrf8luyomrq.public.blob.vercel-storage.com";
+
+export type TrustPhoto = { alt: string; url: string };
+
 export type TrustTeam = {
-  /** Dónde trabaja y de qué es este bloque. Lleva escrito que es un ejemplo. */
-  dateline: string;
   headline: string;
   cta: string;
   /**
@@ -27,13 +29,12 @@ export type TrustTeam = {
    */
   facts: string[];
   layout: "rows" | "checklist";
-  /** Uno o varios huecos de foto: un plano grande, o una tira de cuatro. */
-  photos: string[];
+  /** Una foto grande, o una tira de varias. */
+  photos: TrustPhoto[];
 };
 
 export const TRUST_TEAMS: TrustTeam[] = [
   {
-    dateline: "Villa Clara, Cuba · equipo de ejemplo",
     headline: "SolarCaribe, el equipo que conoce el centro de la isla",
     cta: "Conoce a SolarCaribe",
     layout: "rows",
@@ -44,10 +45,14 @@ export const TRUST_TEAMS: TrustTeam[] = [
       "Garantía de equipo: 2 años",
       "Responde en menos de 24 h por WhatsApp",
     ],
-    photos: ["[foto: equipo SolarCaribe instalando, Villa Clara]"],
+    photos: [
+      {
+        alt: "Equipo SolarCaribe instalando paneles al atardecer, Villa Clara",
+        url: `${BLOB_HOST}/landing/trust-solarcaribe-team.jpg`,
+      },
+    ],
   },
   {
-    dateline: "Santiago de Cuba · equipo de ejemplo",
     headline: "Energía Oriente, todo lo que necesita tu instalación",
     cta: "Ver qué incluye",
     layout: "checklist",
@@ -60,29 +65,13 @@ export const TRUST_TEAMS: TrustTeam[] = [
       "Soporte técnico en español",
     ],
     photos: [
-      "[foto] cuadrilla en obra",
-      "[foto] panel instalado, techo plano",
-      "[foto] tablero e inversor",
-      "[foto] entrega y capacitación al cliente",
+      { alt: "Cuadrilla en obra, montando la estructura", url: `${BLOB_HOST}/landing/trust-crew-onsite.jpg` },
+      { alt: "Panel instalado, techo plano", url: `${BLOB_HOST}/landing/trust-panel-flat-roof.jpg` },
+      { alt: "Tablero e inversor de la instalación", url: `${BLOB_HOST}/landing/trust-inverter-panel.jpg` },
+      {
+        alt: "Entrega y capacitación al cliente",
+        url: `${BLOB_HOST}/landing/trust-client-handoff.jpg`,
+      },
     ],
-  },
-];
-
-export type TrustTerm = { question: string; answer: string };
-
-/** Lo que hoy se puede afirmar sobre el trato, en las palabras del comprador. */
-export const TRUST_TERMS: TrustTerm[] = [
-  {
-    question: "quién instala",
-    answer: "El proveedor que elijas, con su propio equipo.",
-  },
-  {
-    question: "si algo falla",
-    answer: "El proveedor responde por su garantía; Solaris media el reclamo.",
-  },
-  {
-    question: "cómo se paga",
-    answer:
-      "A Solaris, con factura — nunca en efectivo al instalador, nunca por fuera.",
   },
 ];

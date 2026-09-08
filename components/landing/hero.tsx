@@ -42,15 +42,19 @@ export function Hero() {
 
       <div className="px-gutter relative z-10 flex flex-col items-center pb-32 text-center">
      
-        <h1 className="text-foreground-inverse text-display-1 mt-6 max-w-225">
+        {/* La única entrada con stagger de la página: título, entradilla y CTA
+            suben uno detrás de otro con `animate-rise` (globals.css). Es lo
+            primero que ve quien llega — el único sitio donde ese gasto de
+            atención está justificado. */}
+        <h1 className="text-foreground-inverse text-display-1 animate-rise mt-6 max-w-225">
           Cuando se va la luz, tu casa sigue encendida.
         </h1>
-        <p className="text-foreground-inverse text-body-lg mt-6 max-w-155">
+        <p className="text-foreground-inverse text-body-lg animate-rise mt-6 max-w-155 [animation-delay:120ms]">
           Kits solares con paneles, inversor, baterías e instalación incluida.
           Te los monta un proveedor de tu provincia y el pago va por Solaris,
           con factura.
         </p>
-        <FlatCta href="/catalog" className="mt-8">
+        <FlatCta href="/catalog" className="animate-rise mt-8 [animation-delay:240ms]">
           Ver catálogo
         </FlatCta>
       </div>
