@@ -27,6 +27,16 @@ export const DEFAULT_HOLD_HOURS = 72;
  */
 export const MAX_CONFIRMATION_HOURS = 24;
 
+/**
+ * Lo que tarda de verdad un Zelle manual entre que se reporta y el admin lo
+ * verifica en el banco. Es el suelo por debajo del cual retener no sirve de
+ * nada, y el numero que el formulario del proveedor le enseña.
+ *
+ * No lo pone la plataforma por gusto: es el medio de pago mas lento habilitado.
+ * Con QvaPay (Etapa 11) el pago es inmediato y este suelo baja solo.
+ */
+export const ZELLE_WINDOW_HOURS = 48;
+
 const HOUR_MS = 60 * 60 * 1000;
 
 /**

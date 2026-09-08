@@ -7,6 +7,7 @@ import * as z from "zod";
 import { db } from "@/lib/db";
 import { serviceCategories, services, suppliers } from "@/lib/db/schema";
 import { verifyAdmin } from "@/lib/dal";
+import { openPriceTimeline, recordPriceChange } from "@/lib/pricing/service";
 import { deleteBlobs, removedImages } from "@/lib/blob";
 import { EQUIPMENT_SCOPES, SERVICE_PRICINGS } from "@/lib/services/enums";
 import { hasForeignOffers } from "@/lib/services/queries";
@@ -108,7 +109,7 @@ export async function createService(
   _state: ServiceFormState,
   formData: FormData,
 ): Promise<ServiceFormState> {
-  await verifyAdmin();
+  const admin = await verifyAdmin();
 
   const parsed = parseServiceForm(formData);
   if (!parsed.success) {
@@ -131,7 +132,13 @@ export async function createService(
     return { errors: { name: ["Ya existe un servicio con ese nombre."] } };
   }
 
-  await db.insert(services).values({ ...data, slug });
+  const [created] = await db
+    .insert(services)
+    .values({ ...data, slug })
+    .returning({ id: services.id });
+
+  // El precio nace con su linea de tiempo, no solo con la columna.
+  await openPriceTimeline("SERVICE", created.id, data.priceUsd, admin.userId);
 
   revalidateServices();
   redirect("/admin/services");
@@ -141,7 +148,7 @@ export async function updateService(
   _state: ServiceFormState,
   formData: FormData,
 ): Promise<ServiceFormState> {
-  await verifyAdmin();
+  const admin = await verifyAdmin();
 
   const id = idSchema.safeParse(formData.get("id"));
   if (!id.success) return { message: "Servicio inválido." };
@@ -191,6 +198,9 @@ export async function updateService(
   }
 
   await db.update(services).set({ ...data, slug }).where(eq(services.id, id.data));
+
+  // La columna es la cache; la fila es la verdad. Solo escribe si cambio.
+  await recordPriceChange("SERVICE", id.data, data.priceUsd, admin.userId);
 
   // Las imágenes que el admin quitó del formulario ya no las referencia nadie.
   await deleteBlobs(removedImages(current.images, data.images));

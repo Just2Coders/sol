@@ -7,6 +7,7 @@ import * as z from "zod";
 import { db } from "@/lib/db";
 import { kitItems, kits, products, suppliers } from "@/lib/db/schema";
 import { verifyAdmin } from "@/lib/dal";
+import { openPriceTimeline, recordPriceChange } from "@/lib/pricing/service";
 import { deleteBlobs, removedImages } from "@/lib/blob";
 import {
   idSchema,
@@ -89,7 +90,7 @@ export async function createKit(
   _state: KitFormState,
   formData: FormData,
 ): Promise<KitFormState> {
-  await verifyAdmin();
+  const admin = await verifyAdmin();
 
   const parsed = parseKitForm(formData);
   if (!parsed.success) {
@@ -123,6 +124,9 @@ export async function createKit(
     .insert(kitItems)
     .values(items.map((item) => ({ ...item, kitId: kit.id })));
 
+  // El precio nace con su linea de tiempo, no solo con la columna.
+  await openPriceTimeline("KIT", kit.id, data.priceUsd, admin.userId);
+
   revalidateKits();
   redirect("/admin/kits");
 }
@@ -131,7 +135,7 @@ export async function updateKit(
   _state: KitFormState,
   formData: FormData,
 ): Promise<KitFormState> {
-  await verifyAdmin();
+  const admin = await verifyAdmin();
 
   const id = idSchema.safeParse(formData.get("id"));
   if (!id.success) return { message: "Kit inválido." };
@@ -172,11 +176,18 @@ export async function updateKit(
 
   await deleteBlobs(removedImages(current.images, data.images));
 
-  // Reemplaza la composición completa: borrar + insertar en un batch atómico.
-  await db.batch([
-    db.delete(kitItems).where(eq(kitItems.kitId, id.data)),
-    db.insert(kitItems).values(items.map((item) => ({ ...item, kitId: id.data }))),
-  ]);
+  // Reemplaza la composición completa. En transacción y no en `batch`: el
+  // driver ya las soporta, y un kit a medio recomponer —vaciado y sin volver a
+  // llenar— es un kit que se vende sin piezas.
+  // La columna es la cache; la fila es la verdad. Solo escribe si cambio.
+  await recordPriceChange("KIT", id.data, data.priceUsd, admin.userId);
+
+  await db.transaction(async (tx) => {
+    await tx.delete(kitItems).where(eq(kitItems.kitId, id.data));
+    await tx
+      .insert(kitItems)
+      .values(items.map((item) => ({ ...item, kitId: id.data })));
+  });
 
   revalidateKits();
   return { success: true };

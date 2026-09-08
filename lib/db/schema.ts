@@ -105,7 +105,15 @@ export const stockMovementReason = pgEnum("stock_movement_reason", [
   "OPENING", // saldo de apertura: lo que había el día que nació el libro
   "RESTOCK", // llegó una reposición
   "SALE", // se cobró un pedido y su reserva se consumió
-  "RELEASE", // una reserva caducó o se liberó, y el stock vuelve
+  /**
+   * **Sin uso hoy, y a propósito.** Soltar una reserva no mueve el saldo: la
+   * mercancía nunca salió del almacén, solo estaba apartada — lo que baja es
+   * `products.reserved`, que no es el libro mayor. Se queda en el enum porque
+   * retirar un valor en Postgres obliga a recrear el tipo y reescribir cada
+   * columna que lo use, un coste sin ninguna ganancia. Si algún día una reserva
+   * llegara a descontar `stock` directamente, este es su motivo.
+   */
+  "RELEASE",
   "ADJUSTMENT", // recuento manual del proveedor
   "LOSS", // rotura, robo, merma
   "RETURN", // el cliente devolvió

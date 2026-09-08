@@ -6,6 +6,7 @@ import {
   updateSupplier,
   type SupplierFormState,
 } from "@/app/actions/suppliers";
+import { DEFAULT_HOLD_HOURS, ZELLE_WINDOW_HOURS } from "@/lib/inventory/holds";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -34,6 +35,7 @@ type SupplierDefaults = {
   logoUrl: string | null;
   notes: string | null;
   payoutInfo: string | null;
+  reservationHoldHours: number | null;
   active: boolean;
   zoneIds: string[];
 };
@@ -109,6 +111,27 @@ export function SupplierForm({
               placeholder="https://..."
             />
             <FieldError state={state} field="logoUrl" />
+          </div>
+          <div className="grid gap-2 sm:col-span-2">
+            <Label htmlFor="reservationHoldHours">
+              Horas que retiene su stock
+            </Label>
+            <Input
+              id="reservationHoldHours"
+              name="reservationHoldHours"
+              inputMode="numeric"
+              defaultValue={supplier?.reservationHoldHours ?? ""}
+              placeholder={`${DEFAULT_HOLD_HOURS} (por defecto)`}
+            />
+            {/* Retener mercancia le cuesta a el, no a la plataforma: es su
+                decision. Lo unico que hay que decirle es la consecuencia. */}
+            <p className="text-sm text-muted-foreground">
+              Cuanto se aparta lo suyo mientras el comprador paga. Vacio = las{" "}
+              {DEFAULT_HOLD_HOURS} h de la plataforma. Por debajo de{" "}
+              {ZELLE_WINDOW_HOURS} h sus productos se pueden reservar pero no dan
+              tiempo a completar un Zelle, asi que se caeran solos.
+            </p>
+            <FieldError state={state} field="reservationHoldHours" />
           </div>
           <div className="grid gap-2 sm:col-span-2">
             <Label htmlFor="notes">Notas internas</Label>
