@@ -22,12 +22,12 @@ import { getZoneFilterOptions } from "@/lib/zones/queries";
 export const metadata: Metadata = {
   title: "Catálogo — Solaris",
   description:
-    "Kits solares y equipos sueltos de proveedores verificados, filtrados por la provincia donde vas a instalar.",
+    "Kits solares, equipos sueltos e instalación de proveedores verificados, filtrados por la provincia donde vas a instalar.",
   alternates: { canonical: "/catalog" },
   openGraph: {
     title: "Catálogo — Solaris",
     description:
-      "Kits solares y equipos sueltos de proveedores verificados, filtrados por la provincia donde vas a instalar.",
+      "Kits solares, equipos sueltos e instalación de proveedores verificados, filtrados por la provincia donde vas a instalar.",
     url: "/catalog",
     type: "website",
   },
@@ -93,10 +93,10 @@ async function CatalogBody({ filters }: { filters: Filters }) {
         </section>
       ) : (
         <>
-          {/* A sangre y sin gap: la retícula se dibuja sola con el fondo de
-              línea asomando entre celdas (gap-px sobre bg-border), como una
-              tabla. */}
-          <ul className="bg-border grid grid-cols-1 gap-px sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          {/* Espaciada, no a sangre: la misma anatomía de card que
+              `OfferCard` en la home necesita aire alrededor para leerse como
+              una ficha y no como una celda de tabla. */}
+          <ul className="px-gutter grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
             {catalog.items.map((item) => (
               <CatalogCard key={`${item.type}-${item.id}`} item={item} />
             ))}
@@ -246,7 +246,7 @@ function EmptyState({
     return (
       <Message
         title="Todavía no hay nada publicado."
-        body="Los proveedores están cargando sus kits y equipos. Vuelve en unos días."
+        body="Los proveedores están cargando sus kits, equipos e instalaciones. Vuelve en unos días."
       />
     );
   }

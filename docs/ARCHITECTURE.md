@@ -15,7 +15,7 @@
 |---|---|
 | Framework | Next.js 16 (App Router, React Server Components) + React 19 |
 | Lenguaje | TypeScript en modo `strict` |
-| Base de datos | PostgreSQL en **Neon** (driver serverless HTTP) |
+| Base de datos | PostgreSQL en **Neon** (driver serverless por WebSocket) |
 | ORM | **Drizzle ORM** + `drizzle-kit` para migraciones |
 | Validación | **Zod** v4 |
 | Auth | Sesión propia por **JWT** (`jose`) en cookie httpOnly + `bcryptjs` |
@@ -28,20 +28,33 @@
 app/                    Presentación: rutas, páginas (RSC) y Server Actions
   (auth)/               Grupo de rutas de autenticación (login, signup)
   actions/              Server Actions ("use server") — punto de entrada de mutaciones
-  admin/                Panel de administración (rol ADMIN): zones, suppliers, products, kits
-  account/              Área del cliente autenticado
-  catalog/              Catálogo público: listado, /products/[slug], /kits/[slug]
+  admin/                Panel de administración (rol ADMIN): zones, suppliers,
+                        supplier-leads, products, kits, services,
+                        service-categories
+  account/              Área del cliente autenticado, con /orders y el detalle
+                        de cada pedido
+  catalog/              Catálogo público: listado y fichas de /products/[slug],
+                        /kits/[slug] y /services/[slug]
+  checkout/             Confirmar el pedido. Único punto del catálogo que exige
+                        sesión (el resto se navega sin cuenta)
   globals.css           Design system: roles de color/tipografía y su registro en Tailwind
 components/
   ui/                   Primitivos de shadcn/ui (button, input, card, ...)
   auth/                 Componentes de cliente por feature (formularios de auth)
   admin/                Componentes de cliente del panel admin (formularios CRUD)
   landing/              Home: hero, mapa de provincias, barra del sitio
-  catalog/              Catálogo público: filtros, tarjeta, galería, panel de compra
+  catalog/              Catálogo público: filtros, tarjeta, foto, instalaciones
+    detail/             La ficha a dos columnas: armazón, columna de fotos,
+                        cabecera fija (identidad + compra), acordeón de
+                        secciones, componentes del kit, proveedor y su cobertura,
+                        y la tira de "más de este proveedor"
   cart/                 Carrito: botón de la ficha y panel lateral del header
+  checkout/             El formulario del pedido y el resumen que devuelve el
+                        servidor con los precios releídos
 lib/                    Lógica de servidor reutilizable (NO específica de una ruta)
   cart/
-    lines.ts            El carrito como dato puro: la línea y sus sumas
+    lines.ts            El carrito como dato puro: la línea, sus sumas y su
+                        reparto por proveedor
     store.ts            El store de zustand, persistido en localStorage
   db/
     schema.ts           Definición de tablas y relaciones Drizzle (fuente del modelo)
@@ -50,12 +63,59 @@ lib/                    Lógica de servidor reutilizable (NO específica de una 
     migrations/         SQL generado por drizzle-kit (versionado en git)
   catalog/
     filters.ts          Los filtros del catálogo tal como viven en la URL (puro)
+    photos.ts           La columna de fotos de una ficha y sus anclas (puro)
     queries.ts          Lecturas del catálogo público (solo activo, por zona)
+  inventory/
+    availability.ts     Qué se puede vender: stock − reserved, y la derivada
+                        de un kit a partir de sus piezas (puro)
+    holds.ts            Los relojes de una reserva: cuánto retiene el
+                        proveedor y de ahí el resto (puro)
+    restocks.ts         La reposición prometida y su ventana (puro)
+    adjustments.ts      Qué recuento y qué ventana son válidos (puro)
+    service.ts          El ÚNICO sitio que escribe stock: movimientos,
+                        reposiciones y el saldo recalculado desde el libro
+    reservation-plan.ts De un carrito a qué unidades retener, con los kits
+                        expandidos a sus piezas (puro)
+    reservations.ts     Retener, consumir y soltar; la sentencia condicional
+                        que impide vender dos veces la última unidad
+    sweep.ts            Lo que hace el cron: soltar vencidas, caducar
+                        anuncios y promover precios
+    queries.ts          El inventario de un producto para el panel
+  pricing/
+    effective.ts        El precio efectivo, el programado y qué hay que
+                        promover (puro)
+    service.ts          El ÚNICO sitio que escribe precio: abre la línea de
+                        tiempo, anota un cambio y promueve los vencidos
+  orders/
+    numbering.ts        SOL-1042: el número que se dicta por teléfono y que es
+                        la referencia del Zelle (puro)
+    checkout-rules.ts   Qué servicio se queda sin equipo y hasta cuándo aguanta
+                        el pedido (puro)
+    revalidate.ts       El carrito releído contra la base: precio del schedule,
+                        proveedor real, cobertura y lo vendible
+    service.ts          Crea el pedido —orden, partes, líneas y reservas— en una
+                        sola transacción
+    decisions.ts        Qué parte sigue viva, cuánto se pagaría hoy y si se puede
+                        cobrar (puro)
+    fulfillment.ts      Mueve una parte a su desenlace y arrastra lo que cuelga:
+                        stock, plazo del pedido y el propio pedido
+    queries.ts          Los pedidos como los ve quien los hizo, y como los ve el
+                        admin (con la puerta del cobro ya resuelta)
+    labels.ts           Los estados del pedido en el idioma del comprador (puro)
   products/queries.ts   Lecturas de productos (panel admin)
   kits/queries.ts       Lecturas de kits con sus componentes (panel admin)
+  services/
+    enums.ts            Los valores de `service_pricing` y `equipment_scope`
+                        (puro: lo importan la Action y el formulario)
+    queries.ts          Lecturas de servicios (panel admin) y la guarda de
+                        ofertas sobre equipo ajeno
+  service-categories/queries.ts
+                        Lecturas de categorías, con cuántos servicios las usan
   zones/queries.ts      Lecturas de zonas (jerarquía estado → ciudad)
   zones/preference.ts   Cookie con la zona que eligió el visitante
   suppliers/queries.ts  Lecturas de proveedores (con zonas de cobertura)
+  supplier-leads/queries.ts
+                        Las solicitudes de alta que deja /sell, para el admin
   session.ts            Emisión/lectura/borrado de la cookie de sesión JWT
   dal.ts                Data Access Layer: verificación de sesión + lectura de usuario
   utils.ts              Helpers compartidos (cn, slugify, safeInternalPath)
@@ -106,9 +166,77 @@ módulo en vez de una query con banderas:
   todo, activo o no.
 - `lib/catalog/queries.ts` sirve al **catálogo público**: solo items activos de
   proveedores activos, filtrados por la zona donde el visitante instala, y con
-  kits y productos unificados en un mismo tipo (`CatalogItem`) para que la
-  grilla no sepa de qué tabla viene cada tarjeta. Nunca expone datos internos
-  del proveedor (`payoutInfo`, teléfono, notas).
+  kits, productos y servicios unificados en un mismo tipo (`CatalogItem`) para
+  que la grilla no sepa de qué tabla viene cada tarjeta. Nunca expone datos
+  internos del proveedor (`payoutInfo`, teléfono, notas).
+
+  El listado son **tres** ramas de un `UNION ALL` con la misma forma de fila, y
+  cada columna que solo tiene una rama viaja neutra en las otras (`null` para la
+  categoría y la unidad de obra fuera de un servicio). Ordenar, cortar y paginar
+  lo hace Postgres sobre la unión, no Node.
+
+  De los servicios **solo se listan los `ANY`**, y es la única diferencia
+  operativa entre `ANY` y `PLATFORM`: los dos aceptan equipo ajeno, pero solo el
+  primero se contrata sin traerlo. Anunciar en la grilla uno que necesita su
+  equipo sería mandar a la gente a una ficha que no le va a vender nada.
+
+### La ficha son dos columnas y tres regiones que no se empujan
+
+Fotos a la izquierda, datos a la derecha, y en escritorio ninguna de las dos mueve
+a la otra: recorrer las fotos no debería empujar el precio fuera de pantalla. En
+móvil vuelve a haber un solo scroll y la tira de fotos se acuesta como carrusel
+con imán. Todo está en `components/catalog/detail/`, y la columna de fotos **no se
+hidrata**: el paso de foto lo hace `scroll-snap` y el salto desde el nombre de un
+componente es un ancla de verdad (`lib/catalog/photos.ts` calcula el id en el
+único sitio que lo conocen las dos columnas).
+
+La columna derecha se reparte en tres, y solo una se mueve: la **cabecera**
+(`detail-head.tsx`: qué es, cuánto cuesta y el botón) queda clavada arriba porque
+es la decisión de compra; el **pie** (`CatalogSupplierCoverage`) queda clavado
+abajo porque la cobertura decide si ese botón sirve de algo donde vive quien mira;
+y entre los dos scrollea lo demás — el acordeón de secciones y la tira de más
+cosas del proveedor. Las secciones van plegadas (`detail-accordion.tsx`) para que
+la columna quepa de un vistazo, y la jerarquía de líneas es lo que las separa: el
+pliegue entre filas es `border-border-strong` y todo filete de dentro de una fila
+es `border-border`, un peldaño por debajo.
+
+Las fotos las trae cada proveedor, así que una pared mezcla estudio con fondo
+blanco, render y foto de obra. `CatalogMedia` con `duotone` las imprime en la
+paleta con dos capas de mezcla —`--photo-highlight` recorta las altas luces al
+papel de la ficha y `--photo-shadow` levanta los negros— y devuelve el color bajo
+el cursor. La capa del papel se queda puesta siempre: es la que hace desaparecer
+el fondo blanco de estudio, y recortar altas luces no le quita color a un
+producto. El duotono completo solo se monta donde hay cursor para deshacerlo
+(`pointer-fine`).
+
+Una ficha lee dos cosas —el item y las instalaciones que ofrece— y las pide **en
+paralelo**: `getInstallationsFor` entra por el slug del item y no por su id
+justamente para no depender de la otra consulta, porque con Neon por HTTP dos
+saltos en serie son dos latencias.
+
+Quien instala no es siempre quien vende: un servicio que no sea `OWN` puede
+ofrecerse junto al equipo de otro proveedor. Por eso la fila dice de quién es
+cuando no coincide con el vendedor, y la línea de carrito que arma guarda **el
+proveedor del servicio** y no el del equipo — es lo que decide en qué parte del
+pedido cae y a quién se le liquida.
+
+> **Pendiente.** Esa lista todavía no filtra por zona, y con un instalador ajeno
+> hace falta: que el visitante llegara a la ficha solo prueba que el **vendedor**
+> cubre su zona. Es el paso 3 de [`PLAN.md`](../PLAN.md), y necesita que la zona
+> del visitante baje hasta la consulta.
+
+Ojo con `extras` de la query relacional de drizzle: reescribe las referencias de
+columna apuntándolas a la tabla exterior, así que una subconsulta correlacionada
+contra otras tablas **no** se puede escribir ahí.
+
+Y ojo con la trampa hermana en `db.select()`: cuando el `FROM` tiene **una sola
+tabla**, drizzle renderiza las columnas sin cualificar. Un `sql` con
+`exists (select 1 from ${products} where ${products.supplierId} = ${suppliers.id})`
+sale como `where "supplier_id" = "id"`, y dentro de la subconsulta las dos
+resuelven contra `products`. No es un error de SQL —la consulta corre— sino una
+respuesta constante y equivocada, que es peor. Cuando haga falta correlacionar,
+o se escriben los identificadores a mano, o se parte en consultas separadas y se
+cruza en memoria (lo que hace `getSupplierOptions` con `hasInstallables`).
 
 Los filtros del catálogo viven en la **URL**, no en estado de cliente
 (`lib/catalog/filters.ts` los traduce en ambos sentidos): así una búsqueda se
@@ -130,8 +258,16 @@ elegido.
   depende de zustand ni del navegador, así que lo importan los dos lados (igual
   que `lib/catalog/filters.ts`).
 - `lib/cart/store.ts` — el store (`"use client"`) con el middleware `persist`.
-  Impone la regla de **un solo proveedor por carrito**: `add` rechaza un item
-  de otro y devuelve el motivo para que la ficha lo explique.
+
+El carrito **admite varios proveedores** y no ordena por ellos: las líneas se
+guardan en el orden en que se eligieron, y agrupar por quién entrega es cosa de
+quien pinta (`cartGroups` en `lines.ts`), no del almacenamiento. Así el panel
+puede enseñar el reparto —un encabezado y un subtotal por proveedor— sin que
+añadir un panel reordene lo que ya estaba puesto delante de los ojos.
+
+`cartGroups()` es quien hace el reparto, y el panel solo lo **dibuja** cuando hay
+más de un proveedor: con uno solo, un encabezado y un subtotal por grupo
+repetirían lo que ya dicen la cabecera y el pie.
 
 Lo que se guarda es una **foto** de la ficha (nombre, precio, stock del
 momento) para poder pintar el panel sin volver al servidor. Nunca se cobra
@@ -152,12 +288,76 @@ Definido en [`lib/db/schema.ts`](../lib/db/schema.ts). Entidades principales:
   Cobertura por zona vía `supplier_zones`. `payoutInfo` = cómo se le liquida.
 - **products** / **kits** — catálogo de cada proveedor. Un kit agrupa productos
   (`kit_items`) y tiene su propio precio.
-- **orders** — una orden pertenece a **un solo proveedor** (simplifica la
-  liquidación). No se mezclan proveedores en un mismo pedido.
+- **services** — mano de obra (instalación), clasificada por
+  **service_categories** (tabla, no enum: el admin añade categorías sin deploy).
+  Tabla aparte de `products` porque un servicio no tiene existencias ni entrega y
+  su precio puede ser cerrado (`FLAT`) o por unidad de obra (`PER_UNIT` +
+  `unitLabel`). `equipmentScope` dice sobre qué equipo trabaja, de más estrecho a
+  más ancho: `OWN` solo sobre lo que vendió su propio proveedor, `PLATFORM`
+  también sobre lo que vendió otro proveedor de Solaris, `ANY` también sobre lo
+  que el comprador consiguió fuera. Los dos últimos son "acepto equipo ajeno" y
+  la pregunta operativa suele ser `scope !== "OWN"`; se separan en una sola cosa
+  —de quién es el equipo es un **dato** mientras lo vendiera Solaris (está en
+  `order_items` de un pedido pagado) y una promesa del cliente cuando no—, y por
+  eso solo `ANY` se puede vender a ciegas. Es del servicio, no del proveedor
+  —la misma empresa quiere las dos cosas a la vez—;
+  `suppliers.defaultEquipmentScope` solo prefija el formulario y **no se lee en
+  ninguna consulta**.
+  **installation_offers** dice qué servicio se ofrece junto a qué producto o kit,
+  y cruza de proveedor cuando el servicio no es `OWN`. Sin filas ahí, un servicio
+  `ANY` se sigue vendiendo solo; los otros dos solo existen pegados a su equipo.
+  Se administran en la ficha del servicio (`/admin/services/[id]`), en una sección
+  **aparte** del formulario y no dentro como las zonas de un proveedor: cerrar un
+  servicio a `OWN` con ofertas ajenas se rechaza con un «quita esas ofertas
+  primero», y si las casillas vivieran en el mismo formulario el select de alcance
+  las escondería justo cuando hay que quitarlas. La regla del alcance se valida en
+  las dos puntas — al escribir (`setInstallationOffers`) y al leer
+  (`getInstallationsFor`).
+- **orders** — lo que el cliente compró y pagó: un número, un total y **un solo
+  pago**, aunque lleve cosas de varios proveedores. No tiene `supplierId`.
+- **order_suppliers** — la parte del pedido que le toca a cada proveedor, con su
+  `subtotalUsd` guardado y su propio `status` de entrega
+  (`PENDING | DELIVERED | CANCELLED`). Es la fila que se liquida y la que puede
+  caerse sola sin arrastrar al pedido. `unique(orderId, supplierId)`: un
+  proveedor no aparece dos veces en el mismo pedido.
 - **order_items** — líneas con **snapshot** de nombre y precio al momento de la
-  compra; `itemId` es una FK "blanda" a `products.id` o `kits.id` según `itemType`.
+  compra; cuelgan de `order_suppliers` (no de `orders`), así que la línea sabe
+  quién la entrega sin repetir la columna. `itemId` es una FK "blanda" a
+  `products.id`, `kits.id` o `services.id` según `itemType`.
+- **stock_movements** — el libro mayor: solo se añade, y explica cada cambio del
+  saldo con su motivo y quién lo hizo. `products.stock` es el saldo y esto el
+  porqué, así que el histórico sale gratis. **Nada más escribe stock.**
+- **stock_reservations** — lo comprometido por un pedido sin cobrar, con
+  vencimiento. Cuelga de `order_suppliers`, así que cancelar la parte de un
+  proveedor devuelve solo su stock. **Vendible = `stock - reserved`.**
+- **restocks** — la reposición prometida. No toca el saldo y lleva **ventana**
+  (`eta_from`/`eta_to`) en vez de fecha: la incertidumbre es estructural, no una
+  nota al pie. Al llegar se resuelve **y** se escribe un `RESTOCK` con la
+  cantidad real — la distancia entre lo anunciado y lo llegado dice qué proveedor
+  cumple.
+- **stock_alerts** — "avísame cuando vuelva", que es lo que se ofrece en lugar de
+  la pre-orden: captura la demanda sin tocar dinero.
+- **price_schedules** — el precio como línea de tiempo, para productos, kits y
+  servicios. Filas pasadas: histórico; futuras: programado; el efectivo es el de
+  mayor `starts_at <= now()`. `price_usd` de cada tabla es una **caché** de ese
+  efectivo, y existe solo porque el listado ordena y filtra por rango sobre esa
+  columna indexada.
 - **payments** — pago por **Zelle** (MVP) o Suby.fi (futuro), con su propio ciclo
-  de verificación manual por el admin.
+  de verificación manual por el admin. Uno por **orden**, no por proveedor:
+  partir el Zelle sería peor para quien compra y peor para conciliar.
+
+> **Pendiente.** El modelo ya sabe **de quién** tiene que ser el equipo, pero
+> todavía no sabe **cuál** es: falta la columna que diga a qué equipo ya comprado
+> se refiere un servicio contratado después de la venta. Es la Etapa 9 de
+> [`PLAN.md`](../PLAN.md) y depende de que existan pedidos pagados, así que se
+> diseña cuando los haya.
+>
+> El otro lado del alcance ya está puesto en el catálogo: un servicio `OWN` o
+> `PLATFORM` no se lista suelto, y su ficha solo enseña el bloque de compra si el
+> carrito trae el equipo que le toca (`cartCoversService`, en el módulo puro para
+> que el checkout revalide con la misma función). Lo que **falta** es la segunda
+> puerta: con «Mis equipos» (Etapa 9) el equipo podrá venir además de un pedido
+> pagado anterior, y eso sí hay que consultarlo.
 
 ### Convenciones del modelo
 
@@ -176,13 +376,94 @@ Definido en [`lib/db/schema.ts`](../lib/db/schema.ts). Entidades principales:
 ## 5. Máquina de estados de la orden (implementada)
 
 ```
-PENDING_PAYMENT → PAYMENT_REPORTED → PAID → COMPLETED
-                                       │
-                                   CANCELLED
+orders.status            PENDING_PAYMENT → PAYMENT_REPORTED → PAID → COMPLETED
+   (el pago, uno)                                              │
+                                                           CANCELLED
+
+order_suppliers.status   PENDING → DELIVERED        ← una por proveedor
+   (la entrega, N)          └───── CANCELLED
 ```
 
 `payments.status`: `PENDING → REPORTED → CONFIRMED` (o `REJECTED`). El admin
 verifica el Zelle manualmente y confirma, lo que hace avanzar la orden.
+
+Los dos carriles se cruzan en un solo sitio: la orden llega a `COMPLETED` cuando
+**todas** sus partes vivas están en `DELIVERED`. Si se cancelan todas, la orden
+queda `CANCELLED`. Nada más: el pago es global —se cobra o no se cobra el pedido
+entero— y la entrega es de cada proveedor por separado, que es exactamente lo
+que el admin coordina y liquida por su lado.
+
+### Los plazos del pedido salen de un solo ajuste
+
+Un pedido tiene cuatro esperas —que el proveedor confirme, que el stock siga
+retenido, que el comprador decida si algo se cae, y que pague— y modeladas como
+cuatro ajustes independientes se contradicen en cuanto alguien toca uno. Aquí hay
+**uno** (`suppliers.reservation_hold_hours`, 72 h si no dice nada) y el resto se
+deriva en `lib/inventory/holds.ts`:
+
+| Espera | Columna | De dónde sale |
+|---|---|---|
+| Retención del stock | `stock_reservations.expires_at` | el hold del proveedor |
+| Confirmación del proveedor | `order_suppliers.confirmation_due_at` | `min(24 h, su hold)` |
+| Pago y decisión del comprador | `orders.expires_at` | el **más temprano** de las reservas vivas |
+
+`orders.expires_at` es el único plazo que ve el comprador: uno con tres
+proveedores tendría tres fechas y eso no se le puede enseñar a nadie. Llegar ahí
+tumba **la parte cuya reserva era**, no el pedido, así que el mínimo se recalcula
+sobre las que quedan — solo puede alargarse. Una parte de solo servicios no
+retiene nada y no entra en el cálculo; un carrito entero de servicios cae al
+default de la plataforma, que es el caso que se olvida y deja un pedido sin
+vencimiento.
+
+Y `orders.total_usd` es **inmutable**. Conviven tres cifras que nunca se pisan: lo
+que se pidió (`total_usd`), lo que se pagaría hoy (la suma de las partes vivas,
+que se calcula y no se guarda) y lo que el comprador aceptó pagar
+(`acknowledged_total_usd`). Mientras las dos últimas difieran hay algo que
+decidir, sin necesidad de un estado nuevo que mantener sincronizado.
+
+### El checkout relee el carrito entero antes de cobrarlo
+
+El carrito es una **foto** del navegador. De lo que manda el cliente solo se
+respetan el par tipo + id y la cantidad; el precio sale de `price_schedules` —no
+de la columna `price_usd`, que es su caché—, el proveedor sale del item, y la
+cobertura se comprueba contra la zona de entrega. Todo en `lib/orders/
+revalidate.ts`, y **las dos** entradas del checkout pasan por ahí: la que pinta
+el resumen y la que crea el pedido. Lo que se ve es lo que se cobra.
+
+Cuando algo falla se para el checkout y se dice cuál; nunca se descarta una línea
+en silencio. La cobertura de entrega sube por la jerarquía de zonas —quien cubre
+la provincia entrega en sus municipios, no al revés—, que es la dirección
+contraria a la del filtro del catálogo: allí se pregunta "¿quién opera por aquí?"
+y aquí "¿me lo llevas a esta puerta?".
+
+### La parte se cae sola, y el pedido no
+
+Una parte tiene tres finales además de entregar, y son tres y no uno porque al
+comprador se le cuentan con palabras distintas: `DECLINED` trae el motivo que
+escribió el proveedor, `EXPIRED` significa dos cosas según si llegó a aceptar
+—`confirmed_at` es lo único que las separa— y `CANCELLED` es una decisión de
+dentro. Meterlos en un solo estado obligaría a adivinar cuál fue para escribir la
+frase.
+
+Los tres pasan por **un solo camino** (`settlePart`), porque lo que cambia entre
+ellos es el rótulo y lo que no cambia es lo que no se puede olvidar: soltar el
+stock retenido, alejar el vencimiento del pedido —el mínimo de las reservas que
+quedan, que solo puede alargarse— y cancelar el pedido si no le queda ninguna
+parte viva. Todo en una transacción: una parte rechazada cuyo stock siguiera
+retenido es mercancía muerta que nadie va a soltar, porque su reserva sigue
+pareciendo válida.
+
+Quien decide se relee **dentro** de la transacción y con `for update`. Entre que
+el admin abre la pantalla y pulsa el botón, el cron pudo haber vencido esa misma
+parte.
+
+### La puerta del cobro
+
+No se confirma un pago mientras un proveedor no haya dicho que sí, ni mientras el
+total vivo se haya separado de lo que el comprador aceptó pagar. `paymentGate`
+devuelve **por qué** y no un booleano: la cola de pagos lo escribe en la fila
+—"1 proveedor sin confirmar"— para que se sepa a quién llamar, y esconder el
+botón no es la defensa.
 
 > Esta máquina de estados coincide con el flujo Zelle descrito en
 > [`PLAN.md`](../PLAN.md) (Fase 1). La integración automática con suby.fi queda
@@ -232,7 +513,124 @@ npm run db:migrate   # aplicar migraciones
 npm run db:push      # empujar el schema directo (solo prototipado local)
 npm run db:studio    # UI de Drizzle para inspeccionar la BD
 npm run db:seed      # cargar datos iniciales
+npm run check:inventory  # las invariantes del inventario, contra la BD apuntada
 ```
+
+### El driver va por WebSocket porque hacen falta transacciones
+
+`lib/db/index.ts` usa `neon-serverless` con un `Pool`, no `neon-http`. La razón
+es una sola: el driver HTTP **no soporta transacciones** —lo lanza
+explícitamente— y crear un pedido son varias escrituras que o entran todas o no
+entra ninguna: la orden, sus partes, sus líneas y la reserva de cada producto.
+
+Un cliente y no dos. La regla "HTTP para leer, Pool para escribir" se rompe la
+primera vez que alguien escribe desde el sitio equivocado, y el fallo sería
+silencioso. El Pool vive a nivel de módulo: en Fluid Compute la instancia se
+reutiliza, así que abrirlo se paga una vez. Un script suelto que importe `db`
+tiene que terminar con `process.exit`, o se queda esperando al socket.
+
+`DATABASE_URL` apunta al endpoint `-pooler` de Neon (PgBouncer en modo
+transacción). Verificado que soporta `BEGIN/COMMIT` con rollback real y
+sentencias parametrizadas; si algún día aparecen errores de *prepared statement*,
+la salida es el endpoint directo.
+
+### Retener no es vender
+
+Entre que se crea un pedido y se confirma el Zelle pasan días. Si el stock bajara
+al confirmar, dos personas comprarían el último panel; si bajara al hacer
+checkout, un carrito abandonado mataría esa unidad para siempre. Por eso se
+**retiene con vencimiento**: sube `products.reserved`, no baja `stock`, y lo
+vendible es la resta.
+
+La puerta de la concurrencia es la condición del `UPDATE`, no una lectura previa:
+
+```sql
+update products set reserved = reserved + $n
+ where id = $id and stock - reserved >= $n
+```
+
+Entre un `SELECT` que dice "queda uno" y el `UPDATE` que lo aparta cabe otra
+petición entera. Así la comprobación y la escritura son el mismo acto, y quien
+llega segundo se lleva cero filas. Está verificado con dos reservas simultáneas
+de la última unidad: gana exactamente una.
+
+Las intenciones se piden **ordenadas por `productId`** (`reservationPlan`). No es
+cosmético: dos checkouts que retuvieran A y B en órdenes distintos dentro de
+sendas transacciones se bloquearían mutuamente.
+
+### Las reglas del inventario viven en funciones puras
+
+`lib/inventory/` y `lib/pricing/` no importan `db` ni llevan `server-only`: son
+las reglas del dominio, no su lectura. Lo hacen a propósito, y por dos motivos
+que se refuerzan.
+
+El primero es que **la misma pregunta se hace desde tres sitios**. "¿Cuánto queda
+de esto?" la responden el listado, la ficha y el checkout; "¿qué precio rige?",
+la tarjeta y la Action que cobra. Escrita como función pura se escribe una vez y
+los tres la importan — igual que ya pasaba con `lib/catalog/filters.ts` y
+`lib/cart/lines.ts`.
+
+El segundo es que **son las que se pueden equivocar**, y en puro cuestan un test
+por caso: el día exacto en que vence una ventana, el kit sin piezas, las reservas
+que superan al stock. Lo que queda alrededor —leer, escribir, revalidar— es
+plomería, y se mantiene fina para que no haya nada que probar en ella.
+
+### Las dos cachés del inventario, y cómo se comprueban
+
+`products.stock` y `price_usd` duplican información que vive en otra tabla
+(`stock_movements` y `price_schedules`). Es doble contabilidad y se acepta **por
+rendimiento de lectura**, no por comodidad: la tarjeta del catálogo necesita las
+dos por fila, y resolverlas con un lateral join sería pagar la temporalidad en la
+consulta más caliente del sitio.
+
+Lo que la hace segura es que descuadrar es **detectable**. Tres queries, una por
+invariante, en `npm run check:inventory`:
+
+```
+products.stock    = coalesce(sum(stock_movements.delta), 0)
+products.reserved = coalesce(sum(quantity de las reservas HELD), 0)
+price_usd         = el price_schedules de mayor starts_at <= now()
+```
+
+**Un agotado no es un callejón.** Cuando no queda nada, el bloque de compra de la
+ficha deja el sitio a lo único útil que queda decir: si vuelve y si te avisamos
+(`RestockNotice`, por el mismo `purchase` que ya usaba la ficha de un servicio).
+Se dice una de dos cosas y nunca se inventa la tercera — una ventana anunciada,
+o «no sabemos». «Vuelve pronto» sin que nadie lo haya prometido es lo que hace
+que la siguiente promesa no valga.
+
+Lo que **no** se hace es venderlo igual: con pago manual, cobrar por adelantado
+contra una fecha aproximada es prometer lo que no se controla. En su lugar está
+`stock_alerts`, que captura la demanda sin tocar dinero y le dice al proveedor
+cuánto pedir. Pide sesión porque el aviso va a una persona. Un **kit** no lo
+lleva —`stock_alerts` es por producto—: su ficha dice cuándo vuelve, heredando la
+ventana **más tardía** de las piezas que le faltan, porque llega cuando llegue la
+última.
+
+**La misma regla, escrita dos veces y a propósito.** Qué se puede vender está en
+`lib/inventory/availability.ts` (puro, con tests) y también en SQL dentro de
+`lib/catalog/queries.ts`. No es duplicación por descuido: las **fichas** cargan
+las piezas de todos modos y usan la función; el **listado** no puede —traerse los
+componentes de cada kit a Node para marcar una tarjeta sería una consulta por
+fila—, así que allí la derivada la calcula Postgres. Si una cambia, cambian las
+dos, y hay un ejercicio contra la base de dev que comprueba que coinciden.
+
+**El saldo se recalcula, no se incrementa.** `lib/inventory/service.ts` escribe
+la fila del libro y después pone `products.stock` igual a la suma de su libro —
+no `stock + delta`. La diferencia es lo que hace que un fallo a medias sea
+inofensivo: `stock = stock + delta` acumula el error si se repite, y `neon-http`
+no da transacciones para impedirlo; recomputar converge siempre a la verdad, así
+que la reparación es volver a ejecutarlo (`repairAllBalances`).
+
+Por eso también **el formulario de producto ya no edita las existencias**: al
+crear se pregunta el saldo de apertura —que entra como movimiento `OPENING`— y a
+partir de ahí solo se mueven por recuento, merma o reposición. Guardar la ficha
+pisaba la columna y rompía la invariante en el acto.
+
+Se cumplen desde la migración `0007`, que además del schema trae el **backfill**
+—un `OPENING` por producto y una fila de precio por item—; sin él las tablas
+nuevas nacerían mintiendo sobre lo que ya existía. El seed hace lo mismo al
+final, para que una base recién sembrada también las cumpla.
 
 Variables de entorno (ver [`.env.example`](../.env.example)): `DATABASE_URL`
 (Neon) y `SESSION_SECRET`.

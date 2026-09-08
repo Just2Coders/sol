@@ -71,19 +71,23 @@ export const getZoneFilterOptions = unstable_cache(
   { tags: [ZONES_CACHE_TAG], revalidate: 86_400 },
 );
 
-export type ZoneOptionGroup = {
-  id: string;
-  name: string;
-  cities: { id: string; name: string }[];
-};
+export type ZoneOption = { id: string; slug: string; name: string };
 
-// La jerarquía reducida a opciones {id, name} para selects y checkboxes
-// (selector de zona del registro, cobertura de proveedores).
+export type ZoneOptionGroup = ZoneOption & { cities: ZoneOption[] };
+
+// La jerarquía reducida a opciones para selects y checkboxes (selector de zona
+// del registro, cobertura de proveedores, entrega del checkout).
+//
+// Llevan las dos identidades porque los dos formularios que las usan no hablan
+// del mismo modo: la cobertura de un proveedor y el registro escriben una FK, y
+// el catálogo y el checkout van por slug, que es lo que viaja en la URL y en la
+// cookie de preferencia.
 export async function getZoneOptions(): Promise<ZoneOptionGroup[]> {
   const states = await getZoneTree();
   return states.map((state) => ({
     id: state.id,
+    slug: state.slug,
     name: state.name,
-    cities: state.children.map((c) => ({ id: c.id, name: c.name })),
+    cities: state.children.map((c) => ({ id: c.id, slug: c.slug, name: c.name })),
   }));
 }

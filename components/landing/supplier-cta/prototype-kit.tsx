@@ -3,39 +3,18 @@
 import { useState, type FormEvent } from "react";
 
 /**
- * Piezas compartidas por los tres prototipos de la sección de proveedores.
+ * Piezas compartidas por los dos prototipos que quedan en la sección de
+ * proveedores de la home (`supplier-cta-ledger.tsx`, `gap-lead-form.tsx`).
  *
- * PROTOTIPO — el envío es falso: no hay Server Action ni tabla detrás. Cuando
- * se elija variante, el `<form onSubmit>` se sustituye por `useActionState` +
- * una Action en `app/actions/` que valide con Zod y guarde el lead, igual que
- * el resto de mutaciones del proyecto. El estado de aquí (idle · sending ·
- * sent) es el mismo que expondrá esa Action, así que el markup no cambia.
+ * PROTOTIPO — el envío es falso: no hay Server Action ni tabla detrás. El
+ * formulario real de `/sell` ya no usa este hook — ver
+ * `app/actions/supplier-leads.ts` y `SupplierApplicationForm`, que persisten
+ * de verdad con `useActionState`. Este archivo se queda solo para que las
+ * otras dos exploraciones, que no han salido de `/design`, sigan compilando.
  */
 
-/**
- * Las 16 provincias, en el mismo orden oeste→este del mapa.
- *
- * PROTOTIPO — en la versión real llegan por props desde el servidor
- * (`getZoneOptions()`), que es la fuente de verdad de las zonas.
- */
-export const PROVINCES = [
-  "Pinar del Río",
-  "Artemisa",
-  "La Habana",
-  "Mayabeque",
-  "Matanzas",
-  "Cienfuegos",
-  "Villa Clara",
-  "Sancti Spíritus",
-  "Ciego de Ávila",
-  "Camagüey",
-  "Las Tunas",
-  "Holguín",
-  "Granma",
-  "Santiago de Cuba",
-  "Guantánamo",
-  "Isla de la Juventud",
-] as const;
+/** Re-exportada desde `lib/zones/provinces` — ver esa nota para el porqué. */
+export { PROVINCES } from "@/lib/zones/provinces";
 
 export type LeadStatus = "idle" | "sending" | "sent";
 

@@ -1,4 +1,5 @@
-import type { CatalogType } from "@/lib/catalog/filters";
+import type { PurchasableType } from "@/lib/catalog/filters";
+import type { EquipmentScope } from "@/lib/services/enums";
 
 /**
  * El carrito como dato puro: qué es una línea y cómo se suma.
@@ -16,19 +17,27 @@ import type { CatalogType } from "@/lib/catalog/filters";
  */
 
 export type CartLine = {
-  type: CatalogType;
-  /** `products.id` o `kits.id` según `type`. */
+  type: PurchasableType;
+  /** `products.id`, `kits.id` o `services.id` según `type`. */
   id: string;
   slug: string;
   name: string;
   priceUsd: number;
+  /**
+   * La unidad que se multiplica cuando la línea no se cuenta por piezas: un
+   * servicio por unidad de obra ("panel", "metro de cable"). `null` en todo lo
+   * demás, que va por unidades sueltas.
+   */
+  unitLabel?: string | null;
   /** Primera foto de la ficha, o `null` si el proveedor no cargó ninguna. */
   image: string | null;
   quantity: number;
   /**
    * Quién lo entrega. Va por slug y no por id porque el catálogo público nunca
-   * expone los uuid internos del proveedor, y con el slug basta para lo único
-   * que el cliente decide: si un item cabe en el carrito que ya hay montado.
+   * expone los uuid internos del proveedor, y con el slug basta para lo que el
+   * cliente hace con él: repartir el pedido en grupos y enseñar de quién es
+   * cada uno. Ojo con una línea de servicio: aquí va el proveedor **del
+   * servicio**, que no siempre es el del equipo desde cuya ficha se añadió.
    */
   supplierSlug: string;
   supplierName: string;
@@ -76,14 +85,81 @@ export function cartCount(lines: CartLine[]): number {
 }
 
 /**
- * El proveedor del carrito, o `null` si está vacío.
+ * ¿Trae el carrito el equipo sobre el que este servicio puede trabajar?
  *
- * Una orden es de un solo proveedor (ver `PLAN.md`), así que basta con mirar la
- * primera línea: el store no deja entrar una segunda de otro.
+ * El alcance decide qué cuenta como "su equipo" (ver PLAN.md): un `OWN` solo
+ * trabaja sobre lo que vendió su propio proveedor, un `PLATFORM` acepta lo de
+ * cualquiera de Solaris, y un `ANY` no necesita nada porque también sirve para
+ * lo que el comprador consiguió fuera — es el único que se puede contratar a
+ * ciegas.
+ *
+ * Sale de las propias líneas y no de la base a propósito: es la misma pregunta
+ * que responde la ficha para decidir si enseña el bloque de compra y la que
+ * revalidará el checkout entre grupos (Etapa 6), así que se escribe una vez y
+ * en el módulo puro que los dos pueden importar.
+ *
+ * Solo cuenta el equipo: una línea de servicio no instala a otro servicio.
+ *
+ * _Queda una segunda puerta por abrir:_ con «Mis equipos» (Etapa 9) el equipo
+ * podrá venir además de un pedido pagado anterior, y eso sí habrá que
+ * consultarlo. Esta función seguirá siendo la mitad del carrito.
  */
-export function cartSupplier(
+export function cartCoversService(
   lines: CartLine[],
-): { slug: string; name: string } | null {
-  const first = lines[0];
-  return first ? { slug: first.supplierSlug, name: first.supplierName } : null;
+  service: { equipmentScope: EquipmentScope; supplierSlug: string },
+): boolean {
+  if (service.equipmentScope === "ANY") return true;
+
+  return lines.some(
+    (line) =>
+      (line.type === "PRODUCT" || line.type === "KIT") &&
+      (service.equipmentScope === "PLATFORM" ||
+        line.supplierSlug === service.supplierSlug),
+  );
+}
+
+/** Lo que entrega un proveedor dentro del pedido: sus líneas y lo que suman. */
+export type CartGroup<Line extends CartLine = CartLine> = {
+  supplierSlug: string;
+  supplierName: string;
+  lines: Line[];
+  subtotalUsd: number;
+};
+
+/**
+ * El carrito repartido por quién entrega cada cosa.
+ *
+ * Un pedido puede llevar varios proveedores y se paga una sola vez (ver
+ * `PLAN.md`), pero cada uno entrega y cobra lo suyo: estos grupos son la misma
+ * forma que tendrá el pedido en la base (`order_suppliers`), y por eso los
+ * mismos que enseña el panel y los que revalida el checkout.
+ *
+ * El orden es el de llegada —el grupo se abre donde entró su primera línea— y no
+ * alfabético: añadir algo no debe reordenar lo que el visitante ya tenía puesto
+ * delante de los ojos.
+ */
+export function cartGroups<Line extends CartLine>(lines: Line[]): CartGroup<Line>[] {
+  const groups = new Map<string, CartGroup<Line>>();
+
+  for (const line of lines) {
+    const group = groups.get(line.supplierSlug);
+    if (group) {
+      group.lines.push(line);
+      continue;
+    }
+    groups.set(line.supplierSlug, {
+      supplierSlug: line.supplierSlug,
+      supplierName: line.supplierName,
+      lines: [line],
+      subtotalUsd: 0,
+    });
+  }
+
+  // El subtotal se cierra al final y sobre las líneas ya juntas: es la misma
+  // suma que el total del carrito, hecha por partes.
+  for (const group of groups.values()) {
+    group.subtotalUsd = cartSubtotalUsd(group.lines);
+  }
+
+  return [...groups.values()];
 }

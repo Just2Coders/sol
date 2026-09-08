@@ -1,22 +1,35 @@
 import Image from "next/image";
-import Link from "next/link";
 
-import { Button } from "@/components/ui/button";
+import { FlatCta } from "./flat-cta";
+import { KitFinder } from "./kit-finder";
 
 /**
  * Hero de la home.
  *
  * Dirección "Taller Solar Caribeño": plano amplio y calmado, luz natural de
- * atardecer y la casa como sujeto. El scrim va en el tono del lienzo oscuro (token
- * --scrim-hero) para que la foto pertenezca a la paleta, y el encuadre se
- * desplaza al 72% para dejar libre la mitad izquierda, donde cae el titular.
+ * atardecer y la casa como sujeto. El scrim va en el tono del lienzo oscuro
+ * (`bg-scrim-hero`) para que la foto pertenezca a la paleta, y el encuadre se
+ * desplaza al 72% para que el sujeto no quede detrás del titular.
  *
- * La navegación no vive aquí: es `SiteHeader`, fijo a nivel de página, para que
- * la marca siga presente al pasar el hero.
+ * Todo el texto cae centrado en el tercio inferior, apoyado en la parte densa
+ * del degradado: es la única zona de la foto donde el blanco tiene contraste
+ * garantizado a cualquier hora del día que muestre la imagen.
+ *
+ * La sección no recorta lo que le sobresale: el buscador de kits nace dentro y
+ * cuelga por debajo del borde de la foto, y es la sección siguiente la que
+ * reserva el aire para recibirlo (`pt-section-lg`).
+ *
+ * La altura es `h-hero` (100vh menos la barra del sitio) y no un píxel fijo:
+ * la barra quedó `sticky top-0` y sigue reservando su hueco en el flujo, así
+ * que si el hero no descuenta ese alto sobra ese hueco al final del scroll de
+ * una pantalla. Con la resta, barra + hero llenan exactamente una pantalla en
+ * cualquier viewport.
  */
 export function Hero() {
+  // El buscador lee el kit elegido del contexto, así que esta sección no tiene
+  // que saber nada de kits para colocarlo.
   return (
-    <section className="px-gutter pb-section-sm relative flex h-screen min-h-[640px] flex-col justify-end">
+    <section className="relative flex h-hero flex-col justify-end">
       <Image
         src="/images/hero-home.jpg"
         alt="Casa cubana al atardecer con paneles solares en el techo y un kit de energía instalado en la pared"
@@ -25,38 +38,34 @@ export function Hero() {
         sizes="100vw"
         className="object-cover object-[72%_center]"
       />
-      <div
-        aria-hidden
-        className="absolute inset-0"
-        style={{ backgroundImage: "var(--scrim-hero)" }}
-      />
+      <div aria-hidden className="bg-scrim-hero absolute inset-0" />
 
-      <p className="text-foreground-inverse/80 text-marginalia right-gutter absolute top-[104px] z-10 hidden text-right font-mono md:block">
-        kit-01 · 3.2 kWh
-        <br />
-        respaldo 8 h
-      </p>
-
-      <h1 className="text-foreground-inverse text-display-1 relative z-10 max-w-[12ch]">
-        El sol ya trabaja para tu casa.
-      </h1>
-      <p className="text-foreground-inverse/90 text-body-lg relative z-10 mt-5 mb-[30px] max-w-[44ch]">
-        Kits solares de proveedores confiables, armados para casas y negocios
-        cubanos. Compara, escoge y coordina la instalación en tu provincia.
-      </p>
-      <div className="relative z-10">
-        <Button asChild size="lg">
-          <Link href="/catalog">Explora los kits</Link>
-        </Button>
+      <div className="px-gutter relative z-10 flex flex-col items-center pb-32 text-center">
+     
+        {/* La única entrada con stagger de la página: título, entradilla y CTA
+            suben uno detrás de otro con `animate-rise` (globals.css). Es lo
+            primero que ve quien llega — el único sitio donde ese gasto de
+            atención está justificado. */}
+        <h1 className="text-foreground-inverse text-display-1 animate-rise mt-6 max-w-225">
+          Cuando se va la luz, tu casa sigue encendida.
+        </h1>
+        <p className="text-foreground-inverse text-body-lg animate-rise mt-6 max-w-155 [animation-delay:120ms]">
+          Kits solares con paneles, inversor, baterías e instalación incluida.
+          Te los monta un proveedor de tu provincia y el pago va por Solaris,
+          con factura.
+        </p>
+        <FlatCta href="/catalog" className="animate-rise mt-8 [animation-delay:240ms]">
+          Ver catálogo
+        </FlatCta>
       </div>
 
-      <p className="text-foreground-inverse/80 text-marginalia right-gutter bottom-section-sm absolute z-10 hidden font-mono md:block">
-        instalación en 14 provincias
-      </p>
-
-      {/* Centinela: marca dónde termina la foto para que SiteHeader sepa cuándo
-          pasar de transparente a sólido. */}
-      <div aria-hidden data-hero-end className="absolute inset-x-0 bottom-0 h-px" />
+      {/* Colgado por debajo del borde de la foto y no a caballo: con el hero a
+          `100vh` exacto, la mitad que antes quedaba sobre la foto asomaba
+          cortada a mitad de botón en la primera pantalla. El desplazamiento
+          alcanza para que toda la barra caiga fuera del pliegue — solo el
+          galón queda a la vista como pista de scroll — y la sección de abajo
+          (`pt-section-lg`) sigue teniendo de sobra para absorberla. */}
+      <KitFinder className="absolute inset-x-0 -bottom-24 z-20" />
     </section>
   );
 }

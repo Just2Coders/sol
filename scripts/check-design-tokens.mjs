@@ -12,6 +12,10 @@
  *      usa como utilidad: text-display-1, px-gutter, duration-slow, ease-standard.
  *   3. Ninguna ruta en español. Los segmentos de app/ y los nombres de query
  *      params son parte de la URL pública y van en inglés.
+ *   4. La lista de roles de texto de lib/utils.ts (TEXT_ROLES) cubre todos los
+ *      --text-* del @theme. Si se desincronizan, tailwind-merge vuelve a tomar
+ *      el rol nuevo por un color y borra en silencio los colores que lo
+ *      precedan en un cn() — ver el comentario de TEXT_ROLES.
  *
  * Se salta app/globals.css (ahí es donde los valores crudos SÍ viven) y
  * components/ui/** (código generado por el CLI de shadcn, no lo escribimos).
@@ -73,7 +77,63 @@ function routeSegments(dir, out = []) {
   return out;
 }
 
-const findings = routeSegments(join(ROOT, "app"));
+/**
+ * Los roles de texto declarados en el @theme, frente a los que conoce
+ * tailwind-merge. Un rol que falte en TEXT_ROLES no rompe nada visible: lo que
+ * hace es borrar colores ajenos al fusionar clases, que es mucho peor de
+ * encontrar. Por eso se compara aquí y no se confía en la memoria de nadie.
+ */
+function textRoleDrift() {
+  const css = readFileSync(join(ROOT, "app", "globals.css"), "utf8");
+  // Solo la declaración del rol (`--text-body: 16px`), no sus modificadores
+  // (`--text-body--line-height`), que no generan utilidad propia.
+  const declared = new Set(
+    [...css.matchAll(/^\s+--text-([a-z0-9-]+):/gm)]
+      .map((m) => m[1])
+      .filter((name) => !name.includes("--")),
+  );
+
+  const utils = readFileSync(join(ROOT, "lib", "utils.ts"), "utf8");
+  const block = utils.match(/export const TEXT_ROLES = \[([^\]]*)\]/s);
+  if (!block) {
+    return [
+      {
+        rel: "lib/utils.ts",
+        line: 0,
+        text: "TEXT_ROLES",
+        why: "no se encontró la lista; sin ella cn() borra colores",
+      },
+    ];
+  }
+  const known = new Set(
+    [...block[1].matchAll(/"([a-z0-9-]+)"/g)].map((m) => m[1]),
+  );
+
+  const out = [];
+  for (const role of declared) {
+    if (!known.has(role)) {
+      out.push({
+        rel: "lib/utils.ts",
+        line: 0,
+        text: `text-${role}`,
+        why: "rol de texto ausente en TEXT_ROLES",
+      });
+    }
+  }
+  for (const role of known) {
+    if (!declared.has(role)) {
+      out.push({
+        rel: "lib/utils.ts",
+        line: 0,
+        text: `text-${role}`,
+        why: "en TEXT_ROLES pero ya no existe en el @theme",
+      });
+    }
+  }
+  return out;
+}
+
+const findings = [...routeSegments(join(ROOT, "app")), ...textRoleDrift()];
 for (const base of SCAN) {
   for (const file of walk(join(ROOT, base))) {
     const rel = relative(ROOT, file);
@@ -100,7 +160,10 @@ for (const base of SCAN) {
 }
 
 if (findings.length === 0) {
-  console.log("✓ Design system limpio: sin colores a mano, sin tokens inline, sin rutas en español.");
+  console.log(
+    "✓ Design system limpio: sin colores a mano, sin tokens inline, sin rutas\n" +
+      "  en español y los roles de texto sincronizados con TEXT_ROLES.",
+  );
   process.exit(0);
 }
 
@@ -115,6 +178,7 @@ console.error(
     "  · Token inline → usa su utilidad (text-display-1, px-gutter, duration-slow);\n" +
     "    si no existe, añade el token al namespace correcto en app/tokens/.\n" +
     "  · Ruta o param → renómbralo a inglés (/catalog, /account, ?from=).\n" +
+    "  · Rol de texto → añádelo (o quítalo) en TEXT_ROLES, en lib/utils.ts.\n" +
     "  Si un caso es intencional, añade el comentario check-design-tokens-ignore\n" +
     "  en esa línea.\n",
 );

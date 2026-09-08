@@ -37,10 +37,12 @@ export const ACCOUNT_LINKS: FooterLink[] = [
 ];
 
 /**
- * El ancla de la sección de proveedores de la home. Vive aquí porque los tres
- * pies la usan y el id lo pone `SupplierCtaBand`.
+ * El alta de proveedor. Era un ancla a la sección de la home (`/#supplier`)
+ * mientras el formulario vivía dentro de ella; ahora el alta es página propia,
+ * así que los pies llevan directos al impreso en vez de dejar al proveedor en
+ * una sección que solo vuelve a enlazar.
  */
-export const SUPPLIER_ANCHOR = "/#supplier";
+export const SUPPLIER_HREF = "/sell";
 
 /**
  * La letra pequeña. Son afirmaciones que el producto sostiene hoy: los precios

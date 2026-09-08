@@ -1,13 +1,16 @@
 import "dotenv/config";
 import { randomBytes } from "node:crypto";
 import bcrypt from "bcryptjs";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { slugify } from "../utils";
 import { db } from "./index";
 import {
+  installationOffers,
   kitItems,
   kits,
   products,
+  serviceCategories,
+  services,
   supplierZones,
   suppliers,
   users,
@@ -23,7 +26,54 @@ const ZONE_TREE: Record<string, string[]> = {
   Zulia: ["Maracaibo"],
 };
 
+// Categorías de instalación con las que arranca la plataforma. El admin las
+// edita y añade desde el panel: la lista de abajo es solo el punto de partida.
+const SERVICE_CATEGORIES = [
+  {
+    name: "Paneles",
+    slug: "panels",
+    description: "Montaje y conexión de paneles sueltos, en techo o estructura.",
+    position: 1,
+  },
+  {
+    name: "Kit completo",
+    slug: "full-kit",
+    description: "Instalación llave en mano de un sistema completo.",
+    position: 2,
+  },
+  {
+    name: "Cableado",
+    slug: "wiring",
+    description: "Tendido, canalización y protecciones del cableado.",
+    position: 3,
+  },
+];
+
 const ADMIN_EMAIL = "cesarfpna@gmail.com";
+
+/**
+ * Fotos de demo del catálogo, ya subidas al store de Blob (`BLOB_READ_WRITE_TOKEN`).
+ *
+ * La clave es el slug del item, así que la misma tabla sirve a productos y kits
+ * sin repetir la URL en cada `insert`: el bloque de abajo la aplica al final,
+ * cuando las filas ya existen —recién creadas por este seed o de una corrida
+ * anterior—. Solo rellena las que están **vacías**, para no pisar lo que el admin
+ * haya cargado después.
+ */
+const CATALOG_PHOTOS: Record<string, string[]> = {
+  "panel-solar-mono-450w": [
+    "https://9lphmnrf8luyomrq.public.blob.vercel-storage.com/catalog/panel-solar-mono-450w/01.avif",
+  ],
+  "inversor-hibrido-3kw-24v": [
+    "https://9lphmnrf8luyomrq.public.blob.vercel-storage.com/catalog/inversor-hibrido-3kw-24v/01.avif",
+  ],
+  "bateria-lifepo4-24v-100ah": [
+    "https://9lphmnrf8luyomrq.public.blob.vercel-storage.com/catalog/bateria-lifepo4-24v-100ah/01.avif",
+  ],
+  "kit-solar-residencial-3kw": [
+    "https://9lphmnrf8luyomrq.public.blob.vercel-storage.com/catalog/kit-solar-residencial-3kw/01.avif",
+  ],
+};
 
 async function main() {
   // ── Zonas ──
@@ -66,6 +116,13 @@ async function main() {
   } else {
     console.log("✓ Admin ya existe, sin cambios");
   }
+
+  // ── Categorías de servicio ──
+  await db
+    .insert(serviceCategories)
+    .values(SERVICE_CATEGORIES)
+    .onConflictDoNothing({ target: serviceCategories.slug });
+  console.log("✓ Categorías de servicio creadas");
 
   // ── Proveedor de prueba con productos y kit ──
   const supplierSlug = "solar-demo";
@@ -156,6 +213,158 @@ async function main() {
   } else {
     console.log("✓ Proveedor de prueba ya existe, sin cambios");
   }
+
+  // ── Servicios de instalación del proveedor de prueba ──
+  // En bloque propio (no dentro del `if` de arriba) para que el seed los añada
+  // también en una base que ya tenía el proveedor de antes.
+  const kitServiceSlug = "full-kit-installation";
+  const existingService = await db.query.services.findFirst({
+    where: eq(services.slug, kitServiceSlug),
+  });
+
+  if (!existingService) {
+    const categoryBySlug = new Map(
+      (
+        await db.query.serviceCategories.findMany({
+          columns: { id: true, slug: true },
+        })
+      ).map((category) => [category.slug, category.id]),
+    );
+
+    const [kitInstall] = await db
+      .insert(services)
+      .values({
+        supplierId: supplier.id,
+        categoryId: categoryBySlug.get("full-kit")!,
+        name: "Instalación de kit completo",
+        slug: kitServiceSlug,
+        description:
+          "Montaje, conexión y puesta en marcha del sistema completo. Incluye materiales de fijación y una revisión a los 30 días.",
+        pricing: "FLAT",
+        priceUsd: 350,
+        // Solo sobre kits propios: la revisión a los 30 días es responder por el
+        // conjunto, y eso no se hace sobre equipo que no vendiste.
+        equipmentScope: "OWN",
+      })
+      .returning();
+
+    const [panelInstall] = await db
+      .insert(services)
+      .values({
+        supplierId: supplier.id,
+        categoryId: categoryBySlug.get("panels")!,
+        name: "Instalación de paneles",
+        slug: "panel-installation",
+        description:
+          "Montaje y conexión de paneles ya comprados, sobre techo o estructura existente.",
+        pricing: "PER_UNIT",
+        priceUsd: 25,
+        unitLabel: "panel",
+        // "Ya comprados" es literal: este trabajo no pregunta de dónde salió el
+        // panel, así que es el ejemplo del extremo abierto.
+        equipmentScope: "ANY",
+      })
+      .returning();
+
+    // Las dos formas de vender lo mismo: estas ofertas ponen el "añadir
+    // instalación" en la ficha del kit y del panel; sin ellas, los servicios se
+    // seguirían vendiendo solos desde su propia ficha.
+    const kit = await db.query.kits.findFirst({
+      where: eq(kits.slug, "kit-solar-residencial-3kw"),
+      columns: { id: true },
+    });
+    const panel = await db.query.products.findFirst({
+      where: eq(products.slug, "panel-solar-mono-450w"),
+      columns: { id: true },
+    });
+
+    const offers = [
+      kit && { serviceId: kitInstall.id, targetType: "KIT" as const, targetId: kit.id },
+      panel && {
+        serviceId: panelInstall.id,
+        targetType: "PRODUCT" as const,
+        targetId: panel.id,
+      },
+    ].filter((offer) => offer != null);
+
+    if (offers.length > 0) await db.insert(installationOffers).values(offers);
+
+    console.log("✓ Servicios de instalación creados (uno fijo, uno por unidad)");
+  } else {
+    console.log("✓ Servicios de instalación ya existen, sin cambios");
+  }
+
+  // ── Fotos del catálogo ──
+  // También fuera del `if`, y por el mismo motivo que los servicios: una base que
+  // ya tenía el proveedor de antes se quedó sin fotos, y este bloque se las pone.
+  let photographed = 0;
+  for (const [slug, images] of Object.entries(CATALOG_PHOTOS)) {
+    const table = slug.startsWith("kit-") ? kits : products;
+    const updated = await db
+      .update(table)
+      .set({ images })
+      // `cardinality` en vez de comparar con `'{}'`: dice lo mismo y se lee.
+      .where(sql`${table.slug} = ${slug} and cardinality(${table.images}) = 0`)
+      .returning({ id: table.id });
+    photographed += updated.length;
+  }
+  console.log(
+    photographed > 0
+      ? `✓ Fotos de Blob asignadas a ${photographed} item(s) del catálogo`
+      : "✓ Los items del catálogo ya tienen fotos, sin cambios",
+  );
+
+  // ── Libro mayor y línea de precios ──
+  // Lo mismo que hizo el backfill de la migración `0007`, pero para lo que nazca
+  // después: una base recién sembrada tiene que cumplir las dos invariantes desde
+  // el primer minuto, o `scripts/check-inventory-invariants.ts` sale en rojo.
+  //
+  // Va al final y fuera de cualquier `if` a propósito: recoge lo que haya, lo
+  // acabe de crear este seed o estuviera de antes. Los `not exists` lo hacen
+  // repetible.
+  const opened = await db.execute(sql`
+    insert into stock_movements (product_id, delta, reason, note)
+    select p.id, p.stock, 'OPENING'::stock_movement_reason,
+           'Saldo de apertura al crear el libro mayor'
+      from products p
+     where not exists (
+       select 1 from stock_movements m
+        where m.product_id = p.id and m.reason = 'OPENING'
+     )
+    returning id
+  `);
+  console.log(
+    opened.rows.length > 0
+      ? `✓ Saldo de apertura escrito para ${opened.rows.length} producto(s)`
+      : "✓ Todos los productos ya tienen saldo de apertura",
+  );
+
+  // El precio se fecha en el nacimiento del item, no en el de hoy: así la línea
+  // de tiempo cubre toda su vida sin un hueco en el que no había precio.
+  let priced = 0;
+  for (const [kind, table] of [
+    ["PRODUCT", products],
+    ["KIT", kits],
+    ["SERVICE", services],
+  ] as const) {
+    const inserted = await db.execute(sql`
+      insert into price_schedules (target_type, target_id, price_usd, starts_at, note)
+      select ${kind}::priceable_type, t.id, t.price_usd, t.created_at,
+             'Precio vigente al crear la línea de tiempo'
+        from ${table} t
+       where not exists (
+         select 1 from price_schedules s
+          where s.target_type = ${kind}::priceable_type and s.target_id = t.id
+       )
+      returning id
+    `);
+    priced += inserted.rows.length;
+  }
+  console.log(
+    priced > 0
+      ? `✓ Precio inicial escrito para ${priced} item(s)`
+      : "✓ Todos los items ya tienen su línea de precios",
+  );
 
   console.log("\nSeed completado.");
 }

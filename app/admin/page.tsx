@@ -21,6 +21,11 @@ const SECTIONS = [
     description: "Datos de contacto, liquidación y zonas de cobertura.",
   },
   {
+    href: "/admin/supplier-leads",
+    title: "Solicitudes de alta",
+    description: "Quién ha pedido vender en Solaris desde /sell.",
+  },
+  {
     href: "/admin/products",
     title: "Productos",
     description: "Paneles, inversores y baterías: precio, stock y ficha técnica.",
@@ -29,6 +34,17 @@ const SECTIONS = [
     href: "/admin/kits",
     title: "Kits",
     description: "Combos de productos de un proveedor, con precio propio.",
+  },
+  {
+    href: "/admin/services",
+    title: "Servicios",
+    description:
+      "Instalación y mantenimiento: cómo se cobran y sobre qué equipo trabajan.",
+  },
+  {
+    href: "/admin/service-categories",
+    title: "Categorías de servicio",
+    description: "Cómo se agrupan los servicios y en qué orden se listan.",
   },
 ] as const;
 

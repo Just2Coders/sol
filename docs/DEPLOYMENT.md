@@ -87,6 +87,28 @@ DATABASE_URL="<neon-...>" npm run db:seed
 > que corra `db:migrate` usando un secreto `DATABASE_URL` del repo. Se añade
 > cuando el ritmo de cambios de schema lo justifique.
 
+## 6-bis. Vercel Blob (imágenes de productos y kits)
+
+Las imágenes se suben **desde el navegador directamente a Blob**: el servidor
+solo firma el permiso en `app/api/blob/upload/route.ts` (verificando rol ADMIN).
+Los bytes no pasan por la función, así que no hay límite de payload ni coste de
+cómputo por subida.
+
+1. **Crear el store** *(una sola vez)*: Vercel → **Storage** → *Create Database*
+   → **Blob** → conéctalo al proyecto `j2csolar`. Vercel añade solo la variable
+   `BLOB_READ_WRITE_TOKEN` a Production y Preview.
+2. **En local**: copia ese token desde Vercel → Storage → tu store → pestaña
+   `.env.local`, y pégalo en tu `.env` como `BLOB_READ_WRITE_TOKEN=...`.
+   Sin él, la subida de archivos falla pero se puede seguir pegando URLs.
+3. **Un solo store para dev y prod.** A diferencia de Neon, aquí no separamos
+   entornos: son ficheros inmutables con nombre aleatorio, no hay riesgo de
+   pisar datos. Si algún día molesta el ruido de pruebas, se crea un segundo
+   store y se apunta la variable de Preview a él.
+
+> Los ficheros huérfanos se borran solos: al quitar una imagen del formulario o
+> eliminar el producto/kit, `lib/blob.ts` llama a `del()` (solo sobre URLs de
+> nuestro store, nunca sobre URLs externas pegadas a mano).
+
 ## 7. Checklist post-deploy
 
 - [ ] La Production URL carga (`/`, `/login`, `/registro`).

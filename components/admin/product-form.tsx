@@ -7,6 +7,7 @@ import {
   type ProductFormState,
 } from "@/app/actions/products";
 import { FieldError } from "@/components/admin/field-error";
+import { ImageUploader } from "@/components/admin/image-uploader";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -39,8 +40,7 @@ export type ProductDefaults = {
   specsText: string;
   priceUsd: number;
   stock: number;
-  /** Una URL por línea. */
-  imagesText: string;
+  images: string[];
   active: boolean;
 };
 
@@ -107,18 +107,28 @@ export function ProductForm({
             />
             <FieldError state={state} field="priceUsd" />
           </div>
-          <div className="grid gap-2">
-            <Label htmlFor="stock">Stock (unidades)</Label>
-            <Input
-              id="stock"
-              name="stock"
-              inputMode="numeric"
-              defaultValue={product?.stock ?? 0}
-              placeholder="25"
-              required
-            />
-            <FieldError state={state} field="stock" />
-          </div>
+          {/* Solo al crear: es la **apertura del libro mayor**, no un campo
+              editable. Guardar la ficha ya no puede pisar el saldo — se mueve
+              con recuentos, mermas y reposiciones, en el panel de abajo, y cada
+              cambio queda explicado. Ver `lib/inventory/service.ts`. */}
+          {!product && (
+            <div className="grid gap-2">
+              <Label htmlFor="stock">Existencias iniciales</Label>
+              <Input
+                id="stock"
+                name="stock"
+                inputMode="numeric"
+                defaultValue={0}
+                placeholder="25"
+                required
+              />
+              <p className="text-sm text-muted-foreground">
+                Con cuántas unidades abre el almacén. A partir de ahí se ajusta
+                desde el inventario del producto.
+              </p>
+              <FieldError state={state} field="stock" />
+            </div>
+          )}
           <div className="grid gap-2 sm:col-span-2">
             <Label htmlFor="description">Descripción</Label>
             <Textarea
@@ -143,17 +153,8 @@ export function ProductForm({
             <FieldError state={state} field="specs" />
           </div>
           <div className="grid gap-2 sm:col-span-2">
-            <Label htmlFor="images">Imágenes</Label>
-            <Textarea
-              id="images"
-              name="images"
-              rows={3}
-              defaultValue={product?.imagesText ?? ""}
-              placeholder={"https://.../panel-frente.jpg\nhttps://.../panel-detalle.jpg"}
-            />
-            <p className="text-sm text-muted-foreground">
-              Una URL por línea (máximo 10). La subida de archivos llega más adelante.
-            </p>
+            <Label>Imágenes</Label>
+            <ImageUploader folder="products" defaultUrls={product?.images} />
             <FieldError state={state} field="images" />
           </div>
           <div className="flex items-center gap-2 sm:col-span-2">

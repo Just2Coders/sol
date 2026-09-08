@@ -1,13 +1,20 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowLeft } from "reicon-react";
 
-import { CatalogGallery } from "@/components/catalog/catalog-gallery";
-import { CatalogPurchasePanel } from "@/components/catalog/catalog-purchase-panel";
-import { catalogItemHref } from "@/lib/catalog/filters";
-import { getCatalogKit, type CatalogKitItem } from "@/lib/catalog/queries";
-import { formatUsd } from "@/lib/utils";
+import { CatalogInstallations } from "@/components/catalog/catalog-installations";
+import {
+  CatalogDetailAccordion,
+  CatalogDetailAccordionRow,
+} from "@/components/catalog/detail/detail-accordion";
+import { CatalogDetailHead } from "@/components/catalog/detail/detail-head";
+import { CatalogDetailShell } from "@/components/catalog/detail/detail-shell";
+import { CatalogKitComponents } from "@/components/catalog/detail/kit-components";
+import { CatalogSupplierReach } from "@/components/catalog/detail/supplier-block";
+import { RestockNotice } from "@/components/catalog/detail/restock-notice";
+// import { CatalogSupplierRelated } from "@/components/catalog/detail/supplier-related";
+import { isoDay } from "@/lib/inventory/restocks";
+import { kitPhotos, photographedComponents } from "@/lib/catalog/photos";
+import { getCatalogKit } from "@/lib/catalog/queries";
 
 type KitPageProps = { params: Promise<{ slug: string }> };
 
@@ -38,115 +45,88 @@ export async function generateMetadata({
   };
 }
 
-// Los centavos se cierran por línea: el precio se guarda en numeric(10,2).
-function lineTotalUsd(item: CatalogKitItem): number {
-  return Math.round(item.unitPriceUsd * item.quantity * 100) / 100;
-}
-
 export default async function KitPage({ params }: KitPageProps) {
   const kit = await getCatalogKit((await params).slug);
   if (!kit) notFound();
 
-  // El scroll es de la página, no del documento: el header del catálogo se
-  // queda arriba mientras se recorre la ficha (ver app/catalog/layout.tsx).
+  // La columna de fotos de un kit se arma con las suyas y una por componente:
+  // es el inventario visible del conjunto, y el destino del salto desde la
+  // lista de la derecha.
+  const photos = kitPhotos(kit.images, kit.name, kit.items);
+
   return (
-    <main className="px-gutter py-section-sm min-h-0 flex-1 overflow-y-auto">
-      <Link
-        href="/catalog"
-        className="text-muted-foreground hover:text-foreground text-label ease-standard inline-flex items-center gap-2 font-mono transition-colors duration-base"
-      >
-        <ArrowLeft className="size-3.5" aria-hidden />
-        volver al catálogo
-      </Link>
-
-      <div className="lg:gap-grid mt-10 grid gap-12 lg:grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)]">
-        <CatalogGallery images={kit.images} alt={kit.name} />
-
-        <div>
-          <p className="text-muted-foreground text-marginalia font-mono">
-            kit · {kit.supplier.name}
-          </p>
-          <h1 className="text-foreground text-display-2 mt-3">{kit.name}</h1>
-
-          {kit.description && (
-            <p className="text-muted-foreground text-body-lg mt-6 max-w-[52ch]">
+    <CatalogDetailShell
+      photos={photos}
+      fallbackAlt={kit.name}
+      head={
+        <CatalogDetailHead
+          kind="kit"
+          supplierName={kit.supplier.name}
+          name={kit.name}
+          priceUsd={kit.priceUsd}
+          savingsUsd={kit.savingsUsd}
+          // Sin piezas suficientes no hay kit que vender: el bloque de compra
+          // deja el sitio a cuándo vuelven las que faltan.
+          purchase={
+            kit.available === 0 ? (
+              <RestockNotice restock={kit.restock} today={isoDay(new Date())} />
+            ) : undefined
+          }
+          item={{
+            type: "KIT",
+            id: kit.id,
+            slug: kit.slug,
+            name: kit.name,
+            priceUsd: kit.priceUsd,
+            image: kit.images[0] ?? null,
+            supplierSlug: kit.supplier.slug,
+            supplierName: kit.supplier.name,
+            // Un kit no lleva stock propio, pero sí un tope: no se pueden
+            // pedir más de los que dan sus piezas más escasas.
+            stock: kit.available,
+          }}
+          installations={
+            <CatalogInstallations
+              installations={kit.installations}
+              supplier={kit.supplier}
+            />
+          }
+        />
+      }
+    >
+      {/* Lo que se lee primero llega abierto: qué es y de qué está hecho. Un
+          valor que no tenga fila —un kit sin descripción— se ignora solo. */}
+      <CatalogDetailAccordion defaultOpen={["description", "components"]}>
+        {kit.description && (
+          <CatalogDetailAccordionRow value="description" label="Descripción">
+            <p className="text-muted-foreground text-body max-w-[60ch]">
               {kit.description}
             </p>
-          )}
+          </CatalogDetailAccordionRow>
+        )}
 
-          <div className="mt-8">
-            <CatalogPurchasePanel
-              item={{
-                type: "KIT",
-                id: kit.id,
-                slug: kit.slug,
-                name: kit.name,
-                priceUsd: kit.priceUsd,
-                image: kit.images[0] ?? null,
-                supplierSlug: kit.supplier.slug,
-                supplierName: kit.supplier.name,
-                // Un kit no lleva stock propio: se arma con lo que haya.
-                stock: null,
-              }}
-              supplier={kit.supplier}
-              note={
-                kit.savingsUsd > 0 ? (
-                  <p className="text-success text-marginalia font-mono">
-                    ahorras {formatUsd(kit.savingsUsd)} frente a comprarlo
-                    suelto
-                  </p>
-                ) : undefined
-              }
-            />
-          </div>
+        {kit.items.length > 0 && (
+          <CatalogDetailAccordionRow value="components" label="Qué incluye">
+            <div className="border-border border-t pt-5">
+              <CatalogKitComponents
+                items={kit.items}
+                photographed={photographedComponents(photos)}
+                itemsTotalUsd={kit.itemsTotalUsd}
+              />
+            </div>
+          </CatalogDetailAccordionRow>
+        )}
 
-          {kit.items.length > 0 && (
-            <section className="mt-12">
-              <h2 className="text-muted-foreground text-label font-mono">
-                qué incluye
-              </h2>
-              <ul className="border-border mt-4 border-t">
-                {kit.items.map((item) => (
-                  <li
-                    key={item.productId}
-                    className="border-border flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1 border-b py-3"
-                  >
-                    <span className="text-foreground text-body">
-                      {item.productActive ? (
-                        <Link
-                          href={catalogItemHref("PRODUCT", item.productSlug)}
-                          className="underline-offset-4 hover:underline"
-                        >
-                          {item.productName}
-                        </Link>
-                      ) : (
-                        item.productName
-                      )}
-                      <span className="text-muted-foreground text-data ml-3 font-mono">
-                        ×{item.quantity}
-                      </span>
-                    </span>
-                    <span className="text-muted-foreground text-data font-mono">
-                      {formatUsd(lineTotalUsd(item))}
-                    </span>
-                  </li>
-                ))}
-              </ul>
+        <CatalogDetailAccordionRow value="scope" label="Alcance">
+          <CatalogSupplierReach supplier={kit.supplier} />
+        </CatalogDetailAccordionRow>
+      </CatalogDetailAccordion>
 
-              {/* La suma de las piezas sueltas: es lo que justifica el precio
-                  del kit, así que se enseña aunque no haya ahorro. */}
-              <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1 py-3">
-                <span className="text-muted-foreground text-body-sm">
-                  Comprando cada pieza por separado
-                </span>
-                <span className="text-muted-foreground text-data font-mono">
-                  {formatUsd(kit.itemsTotalUsd)}
-                </span>
-              </div>
-            </section>
-          )}
-        </div>
-      </div>
-    </main>
+      {/* Desactivada hasta mejorar su diseño — ver CatalogSupplierRelated. */}
+      {/* <CatalogSupplierRelated
+        items={related}
+        supplierName={kit.supplier.name}
+      /> */}
+    </CatalogDetailShell>
   );
 }

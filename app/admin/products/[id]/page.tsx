@@ -4,9 +4,11 @@ import { verifyAdmin } from "@/lib/dal";
 import { deleteProduct } from "@/app/actions/products";
 import { specsToText } from "@/lib/forms";
 import { getProduct } from "@/lib/products/queries";
+import { getStockPanel } from "@/lib/inventory/queries";
 import { getSupplierOptions } from "@/lib/suppliers/queries";
 import { AdminDeleteButton } from "@/components/admin/admin-delete-button";
 import { ProductForm } from "@/components/admin/product-form";
+import { StockPanel } from "@/components/admin/stock-panel";
 
 export const metadata = { title: "Editar producto — Solaris Admin" };
 export const dynamic = "force-dynamic";
@@ -21,9 +23,10 @@ export default async function EditProductPage({
   const id = z.uuid().safeParse((await params).id);
   if (!id.success) notFound();
 
-  const [product, suppliers] = await Promise.all([
+  const [product, suppliers, inventory] = await Promise.all([
     getProduct(id.data),
     getSupplierOptions(),
+    getStockPanel(id.data),
   ]);
   if (!product) notFound();
 
@@ -47,11 +50,21 @@ export default async function EditProductPage({
           specsText: specsToText(product.specs),
           priceUsd: product.priceUsd,
           stock: product.stock,
-          imagesText: product.images.join("\n"),
+          images: product.images,
           active: product.active,
         }}
         suppliers={suppliers}
       />
+      {inventory && (
+        <StockPanel
+          productId={product.id}
+          stock={inventory.stock}
+          reserved={inventory.reserved}
+          available={inventory.available}
+          movements={inventory.movements}
+          restocks={inventory.restocks}
+        />
+      )}
     </div>
   );
 }

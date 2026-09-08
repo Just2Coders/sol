@@ -226,7 +226,7 @@ export function CubaMap({ coverage }: CubaMapProps) {
                 <span className="text-muted-foreground/80 text-marginalia mt-1 block font-mono">
                   {available
                     ? suppliersCount(province.supplierCount)
-                    : "sin cobertura"}
+                    : "sin proveedores todavía"}
                 </span>
               </button>
             </li>

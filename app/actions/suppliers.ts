@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 import { and, eq, inArray, ne } from "drizzle-orm";
 import * as z from "zod";
 import { db } from "@/lib/db";
-import { orders, supplierZones, suppliers, zones } from "@/lib/db/schema";
+import { orderSuppliers, supplierZones, suppliers, zones } from "@/lib/db/schema";
 import { verifyAdmin } from "@/lib/dal";
 import { slugify } from "@/lib/utils";
 
@@ -30,6 +30,17 @@ const supplierSchema = z.object({
   logoUrl: z.url({ error: "Debe ser una URL válida (https://...)." }).trim().optional(),
   notes: optionalText,
   payoutInfo: optionalText,
+  /**
+   * Cuantas horas aguanta reservado lo suyo. Vacio = el default de la
+   * plataforma; `holdHoursFor()` lo interpreta y es el unico sitio que lo hace.
+   */
+  reservationHoldHours: z
+    .string()
+    .trim()
+    .transform((value) => (value === "" ? null : Number(value)))
+    .refine((n) => n === null || (Number.isInteger(n) && n > 0 && n <= 8760), {
+      error: "Horas enteras entre 1 y 8760 (un ano), o vacio para el default.",
+    }),
   active: z.boolean(),
   zoneIds: z.array(z.uuid()),
 });
@@ -44,6 +55,7 @@ function parseSupplierForm(formData: FormData) {
     logoUrl: formData.get("logoUrl") || undefined,
     notes: formData.get("notes"),
     payoutInfo: formData.get("payoutInfo"),
+    reservationHoldHours: formData.get("reservationHoldHours") ?? "",
     active: formData.get("active") === "on",
     zoneIds: formData.getAll("zoneIds"),
   });
@@ -137,21 +149,17 @@ export async function updateSupplier(
     .returning({ id: suppliers.id });
   if (!updated) return { message: "El proveedor ya no existe." };
 
-  // Reemplaza la cobertura completa: borrar + insertar en un batch atómico.
+  // Reemplaza la cobertura completa, en transacción: un proveedor que se queda
+  // un instante sin zonas desaparece del catálogo de todo el mundo.
   const validZoneIds = await existingZoneIds(zoneIds);
-  const clearCoverage = db
-    .delete(supplierZones)
-    .where(eq(supplierZones.supplierId, id.data));
-  if (validZoneIds.length > 0) {
-    await db.batch([
-      clearCoverage,
-      db
+  await db.transaction(async (tx) => {
+    await tx.delete(supplierZones).where(eq(supplierZones.supplierId, id.data));
+    if (validZoneIds.length > 0) {
+      await tx
         .insert(supplierZones)
-        .values(validZoneIds.map((zoneId) => ({ supplierId: id.data, zoneId }))),
-    ]);
-  } else {
-    await clearCoverage;
-  }
+        .values(validZoneIds.map((zoneId) => ({ supplierId: id.data, zoneId })));
+    }
+  });
 
   revalidateSuppliers();
   return { success: true };
@@ -166,12 +174,14 @@ export async function deleteSupplier(
   const id = idSchema.safeParse(formData.get("id"));
   if (!id.success) return { message: "Proveedor inválido." };
 
-  // Las órdenes referencian al proveedor sin cascade: si existen, no se borra
-  // (se pierde la trazabilidad de la liquidación). Desactívalo en su lugar.
-  const order = await db.query.orders.findFirst({
-    where: eq(orders.supplierId, id.data),
+  // Un pedido ya no es de un proveedor: lo que lo referencia sin cascade es su
+  // parte (`order_suppliers`), que es justo la fila con lo que hay que
+  // liquidarle. Si existe alguna no se borra —se perdería esa trazabilidad—:
+  // desactívalo en su lugar.
+  const part = await db.query.orderSuppliers.findFirst({
+    where: eq(orderSuppliers.supplierId, id.data),
   });
-  if (order) {
+  if (part) {
     return {
       message: "Tiene órdenes asociadas; desactívalo en lugar de eliminarlo.",
     };

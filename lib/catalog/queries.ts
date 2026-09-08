@@ -1,22 +1,51 @@
 import "server-only";
 import { cache } from "react";
-import { and, count, eq, exists, gte, inArray, lte, sql, type SQL } from "drizzle-orm";
+import {
+  and,
+  count,
+  eq,
+  exists,
+  gte,
+  inArray,
+  lte,
+  ne,
+  or,
+  sql,
+  type SQL,
+} from "drizzle-orm";
 import { unionAll } from "drizzle-orm/pg-core";
 import { db } from "@/lib/db";
 import {
+  installationOffers,
   kitItems,
   kits,
   products,
+  serviceCategories,
+  services,
   supplierZones,
   suppliers,
   zones,
 } from "@/lib/db/schema";
 import { sumItemsUsd, type KitItemDetail } from "@/lib/kits/queries";
 import {
+  availableUnits,
+  kitAvailableUnits,
+  missingComponents,
+} from "@/lib/inventory/availability";
+import {
+  isoDay,
+  kitRestockWindow,
+  soonestRestock,
+  type RestockWindow,
+} from "@/lib/inventory/restocks";
+import type { EquipmentScope } from "@/lib/services/enums";
+import {
   CATALOG_PAGE_SIZE,
+  type CatalogCounts,
   type CatalogFilters,
   type CatalogSort,
   type CatalogType,
+  type PurchasableType,
 } from "./filters";
 
 /**
@@ -61,9 +90,9 @@ export type CatalogResult = {
   items: CatalogItem[];
   /**
    * Conteos del ámbito (zona + proveedor + precio) **ignorando** el filtro de
-   * tipo: son los números que muestra el selector Todo · Kits · Productos.
+   * tipo: son los números del selector Todo · Kits · Productos · Instalación.
    */
-  counts: { all: number; KIT: number; PRODUCT: number };
+  counts: CatalogCounts;
   /** Proveedores que operan en la zona elegida — alimenta el selector. */
   suppliers: CatalogSupplier[];
   /** La zona resuelta, o `null` si el catálogo se ve sin filtro de zona. */
@@ -176,7 +205,7 @@ function scopeConditions(
 // ─── Listado ─────────────────────────────────────────────────────────────────
 
 function priceConditions(
-  column: typeof products.priceUsd | typeof kits.priceUsd,
+  column: typeof products.priceUsd | typeof kits.priceUsd | typeof services.priceUsd,
   filters: CatalogFilters,
 ): SQL[] {
   const conditions: SQL[] = [];
@@ -199,17 +228,29 @@ function kitSummary(components: number, pieces: number): string | null {
   return `${left} · ${pieces} ${pieces === 1 ? "pieza" : "piezas"}`;
 }
 
+// "Paneles · por panel": de qué trabajo es y cómo se cobra, que es lo que
+// distingue a una instalación de otra en una grilla donde todo lo demás es
+// equipo.
+function serviceSummary(
+  categoryName: string | null,
+  unitLabel: string | null,
+): string | null {
+  const how = unitLabel ? `por ${unitLabel}` : "precio cerrado";
+  return categoryName ? `${categoryName} · ${how}` : how;
+}
+
 /**
- * La fila que devuelven las dos ramas del listado.
+ * La fila que devuelven las tres ramas del listado.
  *
- * Kits y productos se leen con la **misma** forma para poder unirlos en SQL
- * (`UNION ALL`) y que sea Postgres quien ordene, corte y pagine. Las columnas
- * que solo tiene un lado viajan neutras en el otro: un kit nunca tiene `specs`
- * y un producto nunca tiene piezas.
+ * Kits, productos y servicios se leen con la **misma** forma para poder unirlos
+ * en SQL (`UNION ALL`) y que sea Postgres quien ordene, corte y pagine. Las
+ * columnas que solo tiene una rama viajan neutras en las otras: un kit nunca
+ * tiene `specs`, un producto nunca tiene piezas y solo un servicio tiene unidad
+ * de obra.
  */
 type CatalogRow = {
   type: CatalogType;
-  /** 0 = kit, 1 = producto. Es la primera clave del orden "sugerido". */
+  /** 0 = kit, 1 = producto, 2 = servicio. Primera clave del orden "sugerido". */
   rank: number;
   id: string;
   slug: string;
@@ -222,7 +263,15 @@ type CatalogRow = {
   specs: Record<string, string>;
   componentCount: number;
   pieceCount: number;
-  stock: number;
+  /**
+   * Unidades que se pueden vender ahora mismo. En un producto es
+   * `stock - reserved`; en un kit, la derivada de sus piezas; en un servicio,
+   * siempre 1 — la mano de obra no se agota en un almacén.
+   */
+  available: number;
+  /** Solo servicios: de qué trabajo es y cómo se cobra. `null` en el resto. */
+  categoryName: string | null;
+  unitLabel: string | null;
 };
 
 /**
@@ -254,8 +303,24 @@ function kitQuery(filters: CatalogFilters, zone: ResolvedZone | null) {
       pieceCount: sql<number>`(select coalesce(sum(${kitItems.quantity}), 0)::int from ${kitItems} where ${kitItems.kitId} = ${kits.id})`.as(
         "piece_count",
       ),
-      // Un kit nunca se marca sin stock; la columna existe para cuadrar la unión.
-      stock: sql<number>`1`.as("stock"),
+      /**
+       * Un kit no tiene existencias propias: manda su pieza más escasa, contando
+       * ya lo comprometido. Es `kitAvailableUnits` de `lib/inventory` escrito en
+       * SQL — tiene que ser Postgres quien lo calcule, porque de esta columna
+       * depende marcar agotada la tarjeta sin traerse las piezas a Node.
+       *
+       * `min` sobre un conjunto vacío da NULL: un kit sin piezas no se puede
+       * armar, así que cae a 0 y no a "infinitas". Las piezas con cantidad 0 se
+       * excluyen — no aportan escasez y dividir por cero no significa nada.
+       */
+      available:
+        sql<number>`(select coalesce(min(floor((p.stock - p.reserved) / ${kitItems.quantity})), 0)::int
+                       from ${kitItems} join products p on p.id = ${kitItems.productId}
+                      where ${kitItems.kitId} = ${kits.id} and ${kitItems.quantity} > 0)`.as(
+          "available",
+        ),
+      categoryName: sql<string | null>`null`.as("category_name"),
+      unitLabel: sql<string | null>`null`.as("unit_label"),
     })
     .from(kits)
     .innerJoin(suppliers, eq(suppliers.id, kits.supplierId))
@@ -283,7 +348,12 @@ function productQuery(filters: CatalogFilters, zone: ResolvedZone | null) {
       specs: products.specs,
       componentCount: sql<number>`0`.as("component_count"),
       pieceCount: sql<number>`0`.as("piece_count"),
-      stock: products.stock,
+      // Lo comprometido por un pedido sin cobrar no está disponible para nadie más.
+      available: sql<number>`greatest(${products.stock} - ${products.reserved}, 0)`.as(
+        "available",
+      ),
+      categoryName: sql<string | null>`null`.as("category_name"),
+      unitLabel: sql<string | null>`null`.as("unit_label"),
     })
     .from(products)
     .innerJoin(suppliers, eq(suppliers.id, products.supplierId))
@@ -292,6 +362,52 @@ function productQuery(filters: CatalogFilters, zone: ResolvedZone | null) {
         eq(products.active, true),
         ...scopeConditions(zone, filters.supplier),
         ...priceConditions(products.priceUsd, filters),
+      ),
+    );
+}
+
+/**
+ * La tercera rama: la instalación que se contrata sola.
+ *
+ * **Solo entran los `ANY`**, y es la única diferencia real entre `ANY` y
+ * `PLATFORM`: los dos aceptan equipo ajeno, pero solo el primero se puede
+ * contratar sin que la plataforma sepa sobre qué equipo va. Anunciar en la
+ * grilla un servicio que necesita traer su equipo sería mandar a la gente a una
+ * ficha que no le va a vender nada — la misma regla que aplica
+ * `ServicePurchaseBlock`, aquí un paso antes.
+ *
+ * La categoría se une porque es lo que distingue a una instalación de otra en
+ * una tarjeta donde todo lo demás es equipo; es un join por FK indexada.
+ */
+function serviceQuery(filters: CatalogFilters, zone: ResolvedZone | null) {
+  return db
+    .select({
+      type: sql<CatalogType>`'SERVICE'`.as("type"),
+      rank: sql<number>`2`.as("rank"),
+      id: services.id,
+      slug: services.slug,
+      name: services.name,
+      sortName: sql<string>`lower(${services.name})`.as("sort_name"),
+      priceUsd: services.priceUsd,
+      image: sql<string | null>`${services.images}[1]`.as("image"),
+      supplierName: sql<string>`${suppliers.name}`.as("supplier_name"),
+      specs: sql<Record<string, string>>`'{}'::jsonb`.as("specs"),
+      componentCount: sql<number>`0`.as("component_count"),
+      pieceCount: sql<number>`0`.as("piece_count"),
+      // La mano de obra no se agota en un almacén.
+      available: sql<number>`1`.as("available"),
+      categoryName: sql<string | null>`${serviceCategories.name}`.as("category_name"),
+      unitLabel: services.unitLabel,
+    })
+    .from(services)
+    .innerJoin(suppliers, eq(suppliers.id, services.supplierId))
+    .innerJoin(serviceCategories, eq(serviceCategories.id, services.categoryId))
+    .where(
+      and(
+        eq(services.active, true),
+        eq(services.equipmentScope, "ANY"),
+        ...scopeConditions(zone, filters.supplier),
+        ...priceConditions(services.priceUsd, filters),
       ),
     );
 }
@@ -311,8 +427,9 @@ function orderClauses(sort: CatalogSort): SQL[] {
       return [sql`price_usd asc`, sql`sort_name asc`];
     case "price-desc":
       return [sql`price_usd desc`, sql`sort_name asc`];
-    // Sugerido: los kits primero — es lo que la casa compra — y dentro de cada
-    // grupo, del más barato al más caro.
+    // Sugerido: los kits primero —es lo que la casa compra—, luego los productos
+    // y al final la mano de obra, que casi nunca es lo que se venía a buscar.
+    // Dentro de cada grupo, del más barato al más caro.
     case "suggested":
       return [sql`rank asc`, sql`price_usd asc`, sql`sort_name asc`];
   }
@@ -346,7 +463,18 @@ async function listItems(
       .offset(offset);
   }
 
-  return unionAll(kitQuery(filters, zone), productQuery(filters, zone))
+  if (filters.type === "SERVICE") {
+    return serviceQuery(filters, zone)
+      .orderBy(...order)
+      .limit(CATALOG_PAGE_SIZE)
+      .offset(offset);
+  }
+
+  return unionAll(
+    kitQuery(filters, zone),
+    productQuery(filters, zone),
+    serviceQuery(filters, zone),
+  )
     .orderBy(...order)
     .limit(CATALOG_PAGE_SIZE)
     .offset(offset);
@@ -389,6 +517,25 @@ async function countProducts(
   return row?.n ?? 0;
 }
 
+async function countServices(
+  filters: CatalogFilters,
+  zone: ResolvedZone | null,
+): Promise<number> {
+  const [row] = await db
+    .select({ n: count() })
+    .from(services)
+    .innerJoin(suppliers, eq(suppliers.id, services.supplierId))
+    .where(
+      and(
+        eq(services.active, true),
+        eq(services.equipmentScope, "ANY"),
+        ...scopeConditions(zone, filters.supplier),
+        ...priceConditions(services.priceUsd, filters),
+      ),
+    );
+  return row?.n ?? 0;
+}
+
 function toItem(row: CatalogRow): CatalogItem {
   return {
     type: row.type,
@@ -401,8 +548,13 @@ function toItem(row: CatalogRow): CatalogItem {
     summary:
       row.type === "KIT"
         ? kitSummary(row.componentCount, row.pieceCount)
-        : specsSummary(row.specs),
-    outOfStock: row.type === "PRODUCT" && row.stock === 0,
+        : row.type === "SERVICE"
+          ? serviceSummary(row.categoryName, row.unitLabel)
+          : specsSummary(row.specs),
+    // Ahora también un kit se agota: si a una de sus piezas no le quedan
+    // unidades, el kit no se puede armar y venderlo sería prometer una entrega
+    // imposible. Un servicio nunca — la mano de obra no vive en un almacén.
+    outOfStock: row.type !== "SERVICE" && row.available === 0,
   };
 }
 
@@ -421,7 +573,7 @@ export async function getCatalog(
   const zone = filters.zone ? await resolveZone(filters.zone) : null;
   const empty: CatalogResult = {
     items: [],
-    counts: { all: 0, KIT: 0, PRODUCT: 0 },
+    counts: { all: 0, KIT: 0, PRODUCT: 0, SERVICE: 0 },
     suppliers: [],
     zone: zone && { slug: zone.slug, name: zone.name },
     unknownZone: filters.zone !== null && zone === null,
@@ -430,17 +582,19 @@ export async function getCatalog(
   };
   if (empty.unknownZone) return empty;
 
-  const [scope, kitCount, productCount, rows] = await Promise.all([
+  const [scope, kitCount, productCount, serviceCount, rows] = await Promise.all([
     getSuppliersInScope(zone),
     countKits(filters, zone),
     countProducts(filters, zone),
+    countServices(filters, zone),
     listItems(filters, zone),
   ]);
 
-  const counts = {
-    all: kitCount + productCount,
+  const counts: CatalogCounts = {
+    all: kitCount + productCount + serviceCount,
     KIT: kitCount,
     PRODUCT: productCount,
+    SERVICE: serviceCount,
   };
   const total = filters.type ? counts[filters.type] : counts.all;
 
@@ -465,6 +619,108 @@ export type CatalogItemSupplier = {
   zoneNames: string[];
 };
 
+// ─── Instalación ofrecida desde una ficha ────────────────────────────────────
+
+/** Cómo se cobra un servicio; espeja `servicePricing` del schema. */
+export type ServicePricing = "FLAT" | "PER_UNIT";
+
+/** Una instalación que se puede añadir a la compra desde la ficha de un item. */
+export type CatalogInstallation = {
+  id: string;
+  slug: string;
+  name: string;
+  description: string | null;
+  priceUsd: number;
+  pricing: ServicePricing;
+  /** La unidad que se multiplica en `PER_UNIT` ("panel"); `null` en `FLAT`. */
+  unitLabel: string | null;
+  /** Primera foto, para la línea del carrito; `null` si no hay ninguna. */
+  image: string | null;
+  categoryName: string;
+  /**
+   * Quién hace el trabajo, que **no siempre es quien vende el equipo**: un
+   * servicio abierto a equipo ajeno puede ofrecerse aquí siendo de otro. Es el
+   * proveedor que tiene que llevar la línea del carrito —de él cuelga la parte
+   * del pedido y a él se le liquida—, así que viaja con la instalación y no se
+   * deduce del item.
+   */
+  supplier: CatalogSupplier;
+};
+
+/**
+ * Las instalaciones que se ofrecen con un producto o un kit.
+ *
+ * Entra por **slug** y no por id a propósito: así no depende de la consulta del
+ * item y las dos se piden a la vez (`Promise.all`). Pedirla por id serían dos
+ * saltos en serie, y con Neon por HTTP cada salto es latencia real.
+ *
+ * `installation_offers.targetId` es una FK blanda —apunta a `products` o a
+ * `kits` según `targetType`—, así que el join contra la tabla del item se escribe
+ * a mano; drizzle no puede tejer una relación con dos destinos.
+ *
+ * Quién puede aparecer aquí lo decide el **alcance** del servicio: el del propio
+ * vendedor siempre, y el de otro proveedor solo si acepta equipo ajeno
+ * (`equipmentScope !== "OWN"`). Es el mismo cinturón de antes, pero ahora
+ * pregunta por una regla del modelo en vez de dar por hecho que instala quien
+ * vende: una oferta cargada contra un servicio `OWN` de otro no se podría
+ * cumplir, así que directamente no se ofrece.
+ *
+ * Por eso hace falta el join contra el proveedor **del servicio**: hay que
+ * saber si sigue activo (antes se daba por bueno, porque era el mismo que ya
+ * había cargado la ficha) y hay que devolverlo, porque es el que tiene que
+ * llevar la línea del carrito.
+ */
+async function getInstallationsFor(
+  target: "PRODUCT" | "KIT",
+  slug: string,
+): Promise<CatalogInstallation[]> {
+  const owner = target === "PRODUCT" ? products : kits;
+
+  const rows = await db
+    .select({
+      id: services.id,
+      slug: services.slug,
+      name: services.name,
+      description: services.description,
+      priceUsd: services.priceUsd,
+      pricing: services.pricing,
+      unitLabel: services.unitLabel,
+      // Los arrays de Postgres empiezan en 1; fuera de rango da NULL, que es el
+      // "todavía sin foto" que espera la línea del carrito.
+      image: sql<string | null>`${services.images}[1]`.as("image"),
+      categoryName: serviceCategories.name,
+      supplierId: suppliers.id,
+      // `name` y `slug` ya los ocupa el servicio: sin alias las columnas chocan.
+      supplierName: sql<string>`${suppliers.name}`.as("supplier_name"),
+      supplierSlug: sql<string>`${suppliers.slug}`.as("supplier_slug"),
+    })
+    .from(installationOffers)
+    .innerJoin(services, eq(services.id, installationOffers.serviceId))
+    .innerJoin(serviceCategories, eq(serviceCategories.id, services.categoryId))
+    .innerJoin(suppliers, eq(suppliers.id, services.supplierId))
+    .innerJoin(owner, eq(owner.id, installationOffers.targetId))
+    .where(
+      and(
+        eq(installationOffers.targetType, target),
+        eq(owner.slug, slug),
+        eq(owner.active, true),
+        eq(services.active, true),
+        eq(suppliers.active, true),
+        or(
+          eq(services.supplierId, owner.supplierId),
+          ne(services.equipmentScope, "OWN"),
+        ),
+      ),
+    )
+    // El orden lo pone el admin en la categoría; el desempate, el nombre.
+    .orderBy(serviceCategories.position, services.name);
+
+  return rows.map(({ supplierId, supplierName, supplierSlug, ...service }) => ({
+    ...service,
+    supplier: { id: supplierId, name: supplierName, slug: supplierSlug },
+  }));
+}
+
 export type CatalogProduct = {
   id: string;
   slug: string;
@@ -472,15 +728,34 @@ export type CatalogProduct = {
   description: string | null;
   specs: Record<string, string>;
   priceUsd: number;
-  stock: number;
+  /** `stock - reserved`: lo que de verdad se puede pedir, no lo que hay. */
+  available: number;
+  /**
+   * Cuándo vuelve, si es que se ha anunciado. `null` significa **no sabemos**,
+   * que no es lo mismo que "pronto": confundirlas es lo que erosiona la
+   * confianza, así que la ficha dice una cosa o la otra pero nunca inventa.
+   */
+  restock: RestockNotice | null;
   images: string[];
   supplier: CatalogItemSupplier;
+  /** Instalaciones que este producto ofrece; vacío si no hay ninguna. */
+  installations: CatalogInstallation[];
 };
+
+/** La ventana de una reposición viva, ya resuelta a lo que la ficha enseña. */
+export type RestockNotice = { etaFrom: string; etaTo: string };
+
+/** La ventana que sobrevive, sin el resto de la fila. */
+function noticeFrom(restock: RestockWindow | null): RestockNotice | null {
+  return restock && { etaFrom: restock.etaFrom, etaTo: restock.etaTo };
+}
 
 export type CatalogKitItem = KitItemDetail & {
   productSlug: string;
   /** Si el producto está inactivo se lista, pero sin enlazar a una ficha 404. */
   productActive: boolean;
+  /** Las fotos del componente: cada una entra en la columna de la ficha del kit. */
+  productImages: string[];
 };
 
 export type CatalogKit = {
@@ -495,6 +770,39 @@ export type CatalogKit = {
   itemsTotalUsd: number;
   /** Diferencia a favor del kit; 0 si comprarlo suelto sale igual o mejor. */
   savingsUsd: number;
+  supplier: CatalogItemSupplier;
+  /**
+   * Cuántos kits se pueden armar con lo que hay. Derivada de sus piezas: manda
+   * la más escasa, contando ya lo comprometido por pedidos sin cobrar.
+   */
+  available: number;
+  /**
+   * Cuándo vuelve el kit: la ventana **más tardía** de las piezas que le faltan,
+   * porque llega cuando llegue la última. `null` si a alguna no le espera nada —
+   * entonces el kit no promete.
+   */
+  restock: RestockNotice | null;
+  /** Instalaciones que este kit ofrece; vacío si no hay ninguna. */
+  installations: CatalogInstallation[];
+};
+
+/** Un servicio en su propia ficha: la instalación contratada sola. */
+export type CatalogService = {
+  id: string;
+  slug: string;
+  name: string;
+  description: string | null;
+  priceUsd: number;
+  pricing: ServicePricing;
+  unitLabel: string | null;
+  /**
+   * Sobre qué equipo trabaja. La ficha lo necesita para decidir si puede
+   * venderse a ciegas: solo un `ANY` se contrata sin traer nada, los otros dos
+   * tienen que llegar con su equipo (`cartCoversService`).
+   */
+  equipmentScope: EquipmentScope;
+  images: string[];
+  categoryName: string;
   supplier: CatalogItemSupplier;
 };
 
@@ -525,38 +833,75 @@ const supplierWith = {
 export const getCatalogProduct = cache(async function getCatalogProduct(
   slug: string,
 ): Promise<CatalogProduct | null> {
-  const row = await db.query.products.findFirst({
-    where: and(eq(products.slug, slug), eq(products.active, true)),
-    with: { supplier: supplierWith },
-  });
+  // Las dos lecturas son independientes: ninguna necesita el resultado de la
+  // otra, así que salen juntas y la ficha espera una sola vez.
+  const [row, installations] = await Promise.all([
+    db.query.products.findFirst({
+      where: and(eq(products.slug, slug), eq(products.active, true)),
+      with: {
+        supplier: supplierWith,
+        // Las reposiciones vivas se filtran en memoria y no en SQL: son pocas
+        // por producto, y la regla de cuál vale ya está escrita y probada en
+        // `lib/inventory/restocks.ts`. Repetirla en un `where` sería tenerla
+        // en dos sitios que pueden divergir.
+        restocks: {
+          columns: { status: true, etaFrom: true, etaTo: true },
+        },
+      },
+    }),
+    getInstallationsFor("PRODUCT", slug),
+  ]);
   // Un producto de un proveedor dado de baja no se ofrece.
   if (!row || !row.supplier.active) return null;
 
-  const { supplier, ...product } = row;
-  return { ...product, supplier: toCatalogSupplier(supplier) };
+  const { supplier, restocks: announced, ...product } = row;
+  const today = isoDay(new Date());
+  return {
+    ...product,
+    restock: noticeFrom(soonestRestock(announced, today)),
+    // Aquí se puede usar la función pura: la ficha ya trae la fila entera. El
+    // listado no —tendría que traerse las piezas de cada kit a Node—, así que
+    // allí la misma regla va escrita en SQL.
+    available: availableUnits(product),
+    installations,
+    supplier: toCatalogSupplier(supplier),
+  };
 });
 
 export const getCatalogKit = cache(async function getCatalogKit(
   slug: string,
 ): Promise<CatalogKit | null> {
-  const row = await db.query.kits.findFirst({
-    where: and(eq(kits.slug, slug), eq(kits.active, true)),
-    with: {
-      supplier: supplierWith,
-      items: {
-        with: {
-          product: {
-            columns: {
-              name: true,
-              slug: true,
-              priceUsd: true,
-              active: true,
+  const [row, installations] = await Promise.all([
+    db.query.kits.findFirst({
+      where: and(eq(kits.slug, slug), eq(kits.active, true)),
+      with: {
+        supplier: supplierWith,
+        items: {
+          with: {
+            product: {
+              columns: {
+                name: true,
+                slug: true,
+                priceUsd: true,
+                active: true,
+                images: true,
+                // Para la derivada: un kit se arma con lo que quede de sus
+                // piezas, no con lo que figure en el almacén.
+                stock: true,
+                reserved: true,
+              },
+              with: {
+                restocks: {
+                  columns: { status: true, etaFrom: true, etaTo: true },
+                },
+              },
             },
           },
         },
       },
-    },
-  });
+    }),
+    getInstallationsFor("KIT", slug),
+  ]);
   if (!row || !row.supplier.active) return null;
 
   const { supplier, items, ...kit } = row;
@@ -566,15 +911,31 @@ export const getCatalogKit = cache(async function getCatalogKit(
       productName: item.product.name,
       productSlug: item.product.slug,
       productActive: item.product.active,
+      productImages: item.product.images,
       quantity: item.quantity,
       unitPriceUsd: item.product.priceUsd,
     }))
     .sort((a, b) => collator.compare(a.productName, b.productName));
 
+  // Lo que el kit necesita y no tiene, con lo que espera cada pieza: de ahí
+  // sale tanto que esté agotado como cuándo vuelve.
+  const components = items.map((item) => ({
+    stock: item.product.stock,
+    reserved: item.product.reserved,
+    quantity: item.quantity,
+    restocks: item.product.restocks,
+  }));
+  const today = isoDay(new Date());
+
   const itemsTotalUsd = sumItemsUsd(detail);
   return {
     ...kit,
+    restock: kitRestockWindow(missingComponents(components), today),
+    // La misma función que prueban los tests: aquí sí se pueden traer las
+    // piezas, porque la ficha las enseña de todos modos.
+    available: kitAvailableUnits(components),
     items: detail,
+    installations,
     itemsTotalUsd,
     savingsUsd: Math.max(
       0,
@@ -582,4 +943,122 @@ export const getCatalogKit = cache(async function getCatalogKit(
     ),
     supplier: toCatalogSupplier(supplier),
   };
+});
+
+/**
+ * Un servicio por su slug: la instalación contratada **sola**, sin comprar el
+ * equipo. Es la misma fila que ofrece la ficha de un producto o un kit; aquí se
+ * lee con su categoría y la cobertura del proveedor, que es lo que decide si la
+ * instalación llega a donde vive el visitante.
+ */
+export const getCatalogService = cache(async function getCatalogService(
+  slug: string,
+): Promise<CatalogService | null> {
+  const row = await db.query.services.findFirst({
+    where: and(eq(services.slug, slug), eq(services.active, true)),
+    with: {
+      supplier: supplierWith,
+      category: { columns: { name: true } },
+    },
+  });
+  if (!row || !row.supplier.active) return null;
+
+  const { supplier, category, ...service } = row;
+  return {
+    ...service,
+    categoryName: category.name,
+    supplier: toCatalogSupplier(supplier),
+  };
+});
+
+// ─── Más de este proveedor ───────────────────────────────────────────────────
+
+/** Una pieza de la tira de relacionados: lo justo que dibuja una miniatura. */
+export type CatalogRelated = {
+  type: CatalogType;
+  slug: string;
+  name: string;
+  priceUsd: number;
+  /** Primera foto, o `null` si el proveedor aún no cargó ninguna. */
+  image: string | null;
+};
+
+/**
+ * Lo demás que vende el proveedor de la ficha abierta.
+ *
+ * Del **mismo** proveedor y no del catálogo entero. Ya no es porque sea lo único
+ * que cabe en el carrito —un pedido admite varios proveedores—, sino porque es
+ * lo que de verdad viene a cuento: quien está mirando un panel de esta marca es
+ * mucho más probable que quiera su inversor y su batería, del mismo que ya se
+ * ganó su atención, que un producto suelto del otro extremo del catálogo.
+ *
+ * Sin filtro de zona a propósito: la cobertura es del proveedor, así que si el
+ * visitante llegó hasta esta ficha, todo lo de esta tira le llega igual.
+ *
+ * El orden espeja el "sugerido" del listado —kits primero, luego de más barato
+ * a más caro— para que la tira no invente una jerarquía que el catálogo no
+ * tiene. El corte lo hace Postgres.
+ */
+export const getSupplierRelated = cache(async function getSupplierRelated(
+  supplierSlug: string,
+  /** La ficha abierta, que no puede sugerirse a sí misma. */
+  current: { type: PurchasableType; slug: string },
+  limit = 4,
+): Promise<CatalogRelated[]> {
+  const ofSupplier = and(
+    eq(suppliers.slug, supplierSlug),
+    eq(suppliers.active, true),
+  );
+
+  const relatedKits = db
+    .select({
+      type: sql<CatalogType>`'KIT'`.as("type"),
+      rank: sql<number>`0`.as("rank"),
+      slug: kits.slug,
+      name: kits.name,
+      sortName: sql<string>`lower(${kits.name})`.as("sort_name"),
+      priceUsd: kits.priceUsd,
+      image: sql<string | null>`${kits.images}[1]`.as("image"),
+    })
+    .from(kits)
+    .innerJoin(suppliers, eq(suppliers.id, kits.supplierId))
+    .where(
+      and(
+        eq(kits.active, true),
+        ofSupplier,
+        current.type === "KIT" ? ne(kits.slug, current.slug) : undefined,
+      ),
+    );
+
+  const relatedProducts = db
+    .select({
+      type: sql<CatalogType>`'PRODUCT'`.as("type"),
+      rank: sql<number>`1`.as("rank"),
+      slug: products.slug,
+      name: products.name,
+      sortName: sql<string>`lower(${products.name})`.as("sort_name"),
+      priceUsd: products.priceUsd,
+      image: sql<string | null>`${products.images}[1]`.as("image"),
+    })
+    .from(products)
+    .innerJoin(suppliers, eq(suppliers.id, products.supplierId))
+    .where(
+      and(
+        eq(products.active, true),
+        ofSupplier,
+        current.type === "PRODUCT" ? ne(products.slug, current.slug) : undefined,
+      ),
+    );
+
+  const rows = await unionAll(relatedKits, relatedProducts)
+    .orderBy(sql`rank asc`, sql`price_usd asc`, sql`sort_name asc`)
+    .limit(limit);
+
+  return rows.map((row) => ({
+    type: row.type,
+    slug: row.slug,
+    name: row.name,
+    priceUsd: row.priceUsd,
+    image: row.image,
+  }));
 });

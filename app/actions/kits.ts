@@ -7,11 +7,13 @@ import * as z from "zod";
 import { db } from "@/lib/db";
 import { kitItems, kits, products, suppliers } from "@/lib/db/schema";
 import { verifyAdmin } from "@/lib/dal";
+import { openPriceTimeline, recordPriceChange } from "@/lib/pricing/service";
+import { deleteBlobs, removedImages } from "@/lib/blob";
 import {
   idSchema,
   imageUrlsSchema,
   optionalText,
-  parseLines,
+  parseValues,
   priceUsdSchema,
   quantitySchema,
   type ActionState,
@@ -48,7 +50,7 @@ function parseKitForm(formData: FormData) {
     name: formData.get("name"),
     description: formData.get("description"),
     priceUsd: formData.get("priceUsd"),
-    images: parseLines(formData.get("images")),
+    images: parseValues(formData.getAll("images")),
     active: formData.get("active") === "on",
     items: productIds.map((productId) => ({
       productId,
@@ -88,7 +90,7 @@ export async function createKit(
   _state: KitFormState,
   formData: FormData,
 ): Promise<KitFormState> {
-  await verifyAdmin();
+  const admin = await verifyAdmin();
 
   const parsed = parseKitForm(formData);
   if (!parsed.success) {
@@ -122,6 +124,9 @@ export async function createKit(
     .insert(kitItems)
     .values(items.map((item) => ({ ...item, kitId: kit.id })));
 
+  // El precio nace con su linea de tiempo, no solo con la columna.
+  await openPriceTimeline("KIT", kit.id, data.priceUsd, admin.userId);
+
   revalidateKits();
   redirect("/admin/kits");
 }
@@ -130,7 +135,7 @@ export async function updateKit(
   _state: KitFormState,
   formData: FormData,
 ): Promise<KitFormState> {
-  await verifyAdmin();
+  const admin = await verifyAdmin();
 
   const id = idSchema.safeParse(formData.get("id"));
   if (!id.success) return { message: "Kit inválido." };
@@ -159,6 +164,9 @@ export async function updateKit(
   const itemsError = await assertItemsBelongToSupplier(items, data.supplierId);
   if (itemsError) return { message: itemsError };
 
+  const current = await db.query.kits.findFirst({ where: eq(kits.id, id.data) });
+  if (!current) return { message: "El kit ya no existe." };
+
   const [updated] = await db
     .update(kits)
     .set({ ...data, slug })
@@ -166,11 +174,20 @@ export async function updateKit(
     .returning({ id: kits.id });
   if (!updated) return { message: "El kit ya no existe." };
 
-  // Reemplaza la composición completa: borrar + insertar en un batch atómico.
-  await db.batch([
-    db.delete(kitItems).where(eq(kitItems.kitId, id.data)),
-    db.insert(kitItems).values(items.map((item) => ({ ...item, kitId: id.data }))),
-  ]);
+  await deleteBlobs(removedImages(current.images, data.images));
+
+  // Reemplaza la composición completa. En transacción y no en `batch`: el
+  // driver ya las soporta, y un kit a medio recomponer —vaciado y sin volver a
+  // llenar— es un kit que se vende sin piezas.
+  // La columna es la cache; la fila es la verdad. Solo escribe si cambio.
+  await recordPriceChange("KIT", id.data, data.priceUsd, admin.userId);
+
+  await db.transaction(async (tx) => {
+    await tx.delete(kitItems).where(eq(kitItems.kitId, id.data));
+    await tx
+      .insert(kitItems)
+      .values(items.map((item) => ({ ...item, kitId: id.data })));
+  });
 
   revalidateKits();
   return { success: true };
@@ -185,8 +202,11 @@ export async function deleteKit(
   const id = idSchema.safeParse(formData.get("id"));
   if (!id.success) return { message: "Kit inválido." };
 
+  const kit = await db.query.kits.findFirst({ where: eq(kits.id, id.data) });
+
   // `kit_items` cae en cascada. Las órdenes guardan snapshot, no referencia viva.
   await db.delete(kits).where(eq(kits.id, id.data));
+  await deleteBlobs(kit?.images ?? []);
 
   revalidateKits();
   redirect("/admin/kits");

@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/select";
 import {
   DEFAULT_SORT,
+  type CatalogCounts,
   type CatalogFilters,
   type CatalogSort,
   type CatalogType,
@@ -39,7 +40,7 @@ export type CatalogFiltersProps = {
   zones: ZoneFilterGroup[];
   /** Proveedores del ámbito: los que operan en la zona elegida. */
   suppliers: { name: string; slug: string }[];
-  counts: { all: number; KIT: number; PRODUCT: number };
+  counts: CatalogCounts;
 };
 
 // Radix no admite un item con value="", así que "sin filtro" necesita centinela.
@@ -138,10 +139,13 @@ export function Field({
   );
 }
 
+// El orden espeja el "sugerido" del listado: kits, productos y al final la mano
+// de obra, que casi nunca es lo que se venía a buscar.
 const TYPE_OPTIONS: { value: CatalogType | null; label: string }[] = [
   { value: null, label: "Todo" },
   { value: "KIT", label: "Kits" },
   { value: "PRODUCT", label: "Productos" },
+  { value: "SERVICE", label: "Instalación" },
 ];
 
 export function TypeSwitch({
@@ -151,19 +155,12 @@ export function TypeSwitch({
   className,
 }: {
   value: CatalogType | null;
-  counts: { all: number; KIT: number; PRODUCT: number };
+  counts: CatalogCounts;
   onChange: (type: CatalogType | null) => void;
   className?: string;
 }) {
   return (
-    <div
-      className={cn(
-        // h-8 + p-px: el borde (1) y el aire (1) caben dentro de los 32px del
-        // sistema, así el grupo mide lo mismo que un select de al lado.
-        "border-border flex h-8 items-center gap-0.5 rounded-md border p-px",
-        className,
-      )}
-    >
+    <div className={cn("flex items-center gap-2", className)}>
       {TYPE_OPTIONS.map((option) => {
         const active = option.value === value;
         const count = option.value === null ? counts.all : counts[option.value];
@@ -174,14 +171,13 @@ export function TypeSwitch({
             aria-pressed={active}
             onClick={() => onChange(option.value)}
             className={cn(
-              "text-nav ease-standard flex h-full items-center rounded-sm px-3 transition-colors duration-base",
+              "text-label tracking-mono-sm border-foreground ease-standard flex h-8 items-center border px-3 font-mono uppercase transition-colors duration-base",
               active
-                ? "bg-primary text-primary-foreground"
-                : "text-muted-foreground hover:text-foreground",
+                ? "bg-primary-loud text-primary-loud-foreground border-primary-loud"
+                : "text-foreground hover:bg-muted",
             )}
           >
-            {option.label}
-            <span className="text-marginalia ml-2 font-mono">{count}</span>
+            {option.label} &middot; {count}
           </button>
         );
       })}
@@ -550,12 +546,10 @@ export function ActiveFilterChips({
           <button
             type="button"
             onClick={chip.clear}
-            className="border-border text-foreground text-caption hover:border-border-strong hover:bg-muted ease-standard flex items-center gap-2 rounded-md border px-2.5 py-1 transition-colors duration-base"
+            className="border-border-strong text-muted-foreground hover:border-foreground hover:text-foreground text-marginalia tracking-mono-sm ease-standard flex h-8 items-center gap-1.5 border px-3 font-mono uppercase transition-colors duration-base"
           >
             {chip.label}
-            <span aria-hidden className="text-muted-foreground">
-              ×
-            </span>
+            <span aria-hidden>×</span>
             <span className="sr-only">Quitar filtro</span>
           </button>
         </li>

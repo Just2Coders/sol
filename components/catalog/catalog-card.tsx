@@ -1,59 +1,84 @@
 import Link from "next/link";
+import { AlertTriangle, ArrowRight, Box, Package, Shop } from "reicon-react";
 
 import { CatalogMedia } from "@/components/catalog/catalog-media";
 import { catalogItemHref } from "@/lib/catalog/filters";
 import type { CatalogItem } from "@/lib/catalog/queries";
 import { formatUsd } from "@/lib/utils";
 
-const GRID_SIZES =
-  "(min-width: 1280px) 25vw, (min-width: 1024px) 33vw, (min-width: 640px) 50vw, 100vw";
+const GRID_SIZES = "(min-width: 1024px) 33vw, (min-width: 640px) 50vw, 100vw";
 
 /**
- * Celda de la grilla. No es una tarjeta flotante: es un trozo de la retícula,
- * a sangre y sin esquina redondeada — las líneas que la separan las pone el
- * contenedor. Toda ella es el enlace, y al pasar por encima solo cambia la
- * superficie, que es la única señal que hace falta.
+ * Card del catálogo, con la misma anatomía que `OfferCard` en la home
+ * (`components/landing/kit-providers.tsx`): foto + dos barras de tinta cosidas
+ * sin aire entre ellas. La diferencia es que aquí toda la ficha es el
+ * enlace —hay demasiadas cards en la grilla para que cada una pida su propio
+ * "ver más"— así que el CTA final es una etiqueta, no un segundo disparador.
  *
- * El tipo y el proveedor van sobre la foto, arriba a la izquierda, para que el
- * pie quede limpio: nombre, resumen y precio.
+ * El pie va fuera de la tinta, en el papel: es donde vive el dato que no hay
+ * que leer de un vistazo (qué es, quién lo vende) — la foto queda libre para
+ * el producto y las barras para nombre y precio, que son lo que decide.
  */
 export function CatalogCard({ item }: { item: CatalogItem }) {
+  const isKit = item.type === "KIT";
+  const kind = isKit ? "kit" : "producto";
+  const KindIcon = isKit ? Package : Box;
+
   return (
-    <li className="bg-background">
+    <li>
       <Link
         href={catalogItemHref(item.type, item.slug)}
-        // El foco se dibuja por dentro (offset negativo): un ring por fuera lo
-        // taparían las celdas vecinas, que están pegadas sin margen.
-        className="hover:bg-card focus-visible:outline-ring ease-standard flex h-full flex-col transition-colors duration-base focus-visible:outline-2 focus-visible:-outline-offset-2"
+        // `group`: la ficha entera dispara el duotono de su foto — el cursor
+        // entra por cualquier parte del enlace, no solo por el recorte.
+        className="group focus-visible:outline-ring ease-standard flex h-full flex-col focus-visible:outline-2 focus-visible:outline-offset-2"
       >
-        <div className="relative">
-          <CatalogMedia
-            src={item.image}
-            alt={item.name}
-            sizes={GRID_SIZES}
-            className="aspect-[4/3]"
-          />
-          <p className="text-muted-foreground text-marginalia absolute top-6 left-6 font-mono">
-            {item.type === "KIT" ? "kit" : "producto"} · {item.supplierName}
-          </p>
+        <CatalogMedia
+          src={item.image}
+          alt={item.name}
+          sizes={GRID_SIZES}
+          className="aspect-[4/3]"
+          duotone
+        />
+
+        <div className="bg-foreground text-background flex items-center justify-between gap-4 px-5 py-4">
+          <h3 className="text-body font-bold">{item.name}</h3>
         </div>
 
-        <div className="flex flex-1 flex-col p-6">
-          <h3 className="text-foreground text-heading-3">{item.name}</h3>
-          {item.summary && (
-            <p className="text-muted-foreground text-body-sm mt-1">
-              {item.summary}
+        <div className="bg-foreground text-background border-background flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 border-t px-5 pt-3.5 pb-4.5">
+          <p className="text-data font-mono uppercase">
+            {formatUsd(item.priceUsd)}
+          </p>
+          {item.outOfStock ? (
+            <p className="text-warning text-marginalia inline-flex items-center gap-1.5 font-mono uppercase">
+              <AlertTriangle aria-hidden className="size-3.5" />
+              sin stock
             </p>
+          ) : (
+            item.summary && (
+              <p className="text-data font-mono">{item.summary}</p>
+            )
           )}
+        </div>
 
-          <div className="mt-auto flex items-baseline justify-between gap-3 pt-8">
-            <p className="text-foreground text-data font-mono">
-              {formatUsd(item.priceUsd)}
-            </p>
-            {item.outOfStock && (
-              <p className="text-warning text-marginalia font-mono">sin stock</p>
-            )}
+        {/* El pie: qué es y quién lo vende, con la ficha entera ya cerrada
+            arriba en tinta. Los dos iconos van del mismo tono muted que el
+            texto — el `--primary` de la card ya lo lleva "Ver {kind}". */}
+        <div className="border-border mt-auto flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-t px-5 py-3.5">
+          <div className="text-marginalia tracking-mono-sm text-muted-foreground flex items-center gap-4 font-mono uppercase">
+            <span className="inline-flex items-center gap-1.5">
+              <KindIcon aria-hidden className="size-4" />
+              {kind}
+            </span>
+            <span className="inline-flex items-center gap-1.5">
+              <Shop aria-hidden className="size-4" />
+              {item.supplierName}
+            </span>
           </div>
+
+          <span className="text-label tracking-mono-sm text-primary-loud group-hover:text-primary-loud-hover ease-standard inline-flex items-center gap-2 font-mono uppercase transition-colors duration-base">
+            Ver {kind}
+            <ArrowRight aria-hidden className="size-4" />
+          </span>
         </div>
       </Link>
     </li>

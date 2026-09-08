@@ -13,6 +13,11 @@ export default async function AdminLayout({ children }: { children: React.ReactN
             <Link href="/admin" className="font-semibold">
               Solaris Admin
             </Link>
+            {/* Primero en la barra porque es lo único de aquí que corre contra
+                un reloj: lo demás es catálogo y espera. */}
+            <Link href="/admin/orders" className="text-muted-foreground hover:text-foreground">
+              Pedidos
+            </Link>
             <Link href="/admin/zones" className="text-muted-foreground hover:text-foreground">
               Zonas
             </Link>
@@ -23,6 +28,12 @@ export default async function AdminLayout({ children }: { children: React.ReactN
               Proveedores
             </Link>
             <Link
+              href="/admin/supplier-leads"
+              className="text-muted-foreground hover:text-foreground"
+            >
+              Solicitudes
+            </Link>
+            <Link
               href="/admin/products"
               className="text-muted-foreground hover:text-foreground"
             >
@@ -30,6 +41,12 @@ export default async function AdminLayout({ children }: { children: React.ReactN
             </Link>
             <Link href="/admin/kits" className="text-muted-foreground hover:text-foreground">
               Kits
+            </Link>
+            <Link
+              href="/admin/services"
+              className="text-muted-foreground hover:text-foreground"
+            >
+              Servicios
             </Link>
           </nav>
           <LogoutButton />
