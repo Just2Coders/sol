@@ -1,0 +1,66 @@
+name: Migrar producción
+
+# El schema de producción se aplica desde aquí y no desde el portátil de nadie.
+#
+# Vive aparte de `ci.yml` a propósito: aquel es el árbitro que lee y verifica, y
+# este **escribe en la base de datos de producción**. Mezclarlos haría que cada
+# PR arrastrara un job con acceso de escritura a prod sin necesitarlo.
+#
+# Sustituye a la regla manual de `docs/DEPLOYMENT.md` §6 ("el db:migrate de prod
+# se corre junto con el merge a main"): esa regla dependía de que alguien se
+# acordara, y lo que se olvida es justo el paso que deja el código nuevo hablando
+# con un schema viejo.
+
+on:
+  push:
+    branches: [main]
+    # Solo cuando hay migraciones nuevas. Un push a `main` que no toca el schema
+    # no tiene nada que aplicar, y drizzle-kit tampoco haría nada — pero así ni
+    # se abre la puerta ni se pide una aprobación que no hace falta.
+    paths:
+      - "lib/db/migrations/**"
+  # Para el caso en que haga falta correrlo a mano: un despliegue que se quedó a
+  # medias, o una migración que se añadió sin pasar por `main`.
+  workflow_dispatch:
+
+# Dos migraciones a la vez sobre la misma base es cómo se corrompe el registro de
+# lo aplicado. `cancel-in-progress: false` porque una migración empezada se
+# termina: cortarla por la mitad es peor que esperar.
+concurrency:
+  group: migrate-production
+  cancel-in-progress: false
+
+jobs:
+  migrate:
+    name: drizzle-kit migrate
+    runs-on: ubuntu-latest
+    # La puerta. El environment `production` lleva *required reviewers*, así que
+    # el job se queda esperando aprobación con el diff delante en vez de escribir
+    # en cuanto alguien mergea. Es lo único que separa un merge de un cambio de
+    # schema irreversible.
+    environment: production
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Qué se va a aplicar, escrito antes de aplicarlo. Es lo que mira quien
+      # aprueba, y lo que queda en el log si algo sale mal.
+      - name: Migraciones en el repo
+        run: ls -1 lib/db/migrations/*.sql
+
+      # `drizzle-kit migrate` lleva su propio registro (`drizzle.__drizzle_migrations`)
+      # y solo aplica lo que falta, en orden. Es idempotente: repetirlo no duplica
+      # nada, así que reintentar tras un fallo de red es seguro.
+      - name: Aplicar
+        run: npx --no-install drizzle-kit migrate
+        env:
+          DATABASE_URL: ${{ secrets.PRODUCTION_DATABASE_URL }}
