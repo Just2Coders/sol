@@ -1,6 +1,6 @@
 import "server-only";
 import { and, eq, inArray, lt, sql } from "drizzle-orm";
-import { db, type Tx } from "@/lib/db";
+import { db, type Executor, type Tx } from "@/lib/db";
 import { stockReservations } from "@/lib/db/schema";
 import { reservationExpiresAt } from "./holds";
 import { recordMovement, syncStockBalance, type Actor } from "./service";
@@ -156,9 +156,18 @@ export async function consumeReservations(
  * **No escribe movimiento**: soltar no toca `stock`, solo `reserved`. La
  * mercancía nunca salió del almacén, así que el libro mayor no tiene nada que
  * contar.
+ *
+ * El ejecutor va al final y con `db` por defecto porque esto se usa de las dos
+ * formas: dentro de la transacción que rechaza una parte —donde soltar el stock
+ * y marcar la parte tienen que entrar juntos— y suelto, cuando algo lo cancela
+ * por su cuenta. `reserveForPart`, que solo vale dentro de una transacción, pide
+ * el `Tx` delante y obligatorio.
  */
-export async function releaseReservations(orderSupplierId: string): Promise<number> {
-  const released = await db
+export async function releaseReservations(
+  orderSupplierId: string,
+  executor: Executor = db,
+): Promise<number> {
+  const released = await executor
     .update(stockReservations)
     .set({ status: "RELEASED", resolvedAt: new Date() })
     .where(
@@ -170,7 +179,7 @@ export async function releaseReservations(orderSupplierId: string): Promise<numb
     .returning({ productId: stockReservations.productId });
 
   for (const productId of new Set(released.map((row) => row.productId))) {
-    await syncReservedBalance(productId);
+    await syncReservedBalance(productId, executor);
   }
   return released.length;
 }
@@ -234,8 +243,11 @@ export async function releaseExpiredReservations(now = new Date()): Promise<numb
  * repetirlo arregla en vez de acumular. En SQL literal por la trampa de
  * cualificación de drizzle en un `update` de una sola tabla (ARCHITECTURE §3).
  */
-export async function syncReservedBalance(productId: string): Promise<void> {
-  await db.execute(sql`
+export async function syncReservedBalance(
+  productId: string,
+  executor: Executor = db,
+): Promise<void> {
+  await executor.execute(sql`
     update products p
        set reserved = (
              select coalesce(sum(r.quantity), 0)::int

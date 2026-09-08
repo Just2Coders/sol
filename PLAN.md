@@ -542,42 +542,61 @@ schedules. Al revés habría que reescribirlos y migrar pedidos reales. Ver
       *Quién lo pide lo decide el servidor: el alcance del servicio no viaja en la
       línea del carrito, así que el resumen devuelve `needsEquipmentNote` y el
       formulario cambia la etiqueta del campo con eso.*
-- [ ] Página "Mis órdenes" en la cuenta del usuario, con los tres ejes en tiempo
+- [x] Página "Mis órdenes" en la cuenta del usuario, con los tres ejes en tiempo
       real: el pago para el pedido, y la aceptación y la entrega para cada
       proveedor. El marcador "2 de 3 confirmados" va arriba, y al lado la cuenta
       atrás del pedido: es lo que el comprador mira mientras espera, y no saberlo es
       lo que le hace escribir para preguntar.
-      *La página existe (`/account/orders` y el detalle) con **dos** de los tres
-      ejes: el pago del pedido y la entrega de cada parte, más la cuenta atrás. El
-      tercero —la aceptación— todavía no tiene dónde vivir: `fulfillment_status`
-      no gana `CONFIRMED`/`DECLINED`/`EXPIRED` hasta la Etapa 7, y sin ellos el
-      marcador "2 de 3" contaría siempre cero.*
+      *Los tres ejes están. El marcador solo aparece mientras se espera a alguien:
+      «1 de 1 confirmado» en un pedido resuelto compite con lo que sí cambió.*
 - [ ] En el detalle, **el pedido original completo y qué pasó con cada línea**: la
       que sigue en pie con su fecha de reserva —para que se vea cuál aprieta—, y la
       que se cayó con el motivo escrito y sin desaparecer de la lista. Un pedido que
       se recorta solo, o que caduca sin decir quién lo frenaba, es el que genera la
       llamada.
-      *El detalle ya enseña el pedido entero y nada se recorta. Lo que falta es la
-      otra mitad: qué le pasó a cada línea, que son las columnas de la Etapa 7
-      (`decline_reason`, `confirmed_at`, `confirmed_quantity`).*
+      *El detalle enseña el pedido entero, y cada parte lleva al lado lo que le
+      pasó en palabras —con el motivo del rechazo, o diciendo cuál de los dos
+      relojes venció—. Las caídas se atenúan pero no se van.
+      Falta el grano fino: **por línea** y no por parte, que es la confirmación
+      parcial («confirma 2 de 3») y necesita `confirmed_quantity`. Se dejó fuera
+      porque no es una columna más: cambia el subtotal de la parte, las reservas y
+      la cantidad de la línea, y merece su propio paso.*
 
 ### Etapa 7 — Pago manual Zelle (2 días) ★ meta de la fase
 - [ ] Página de instrucciones de pago post-checkout: datos Zelle de la cuenta central, monto, número de orden como referencia.
 - [ ] Formulario de reporte de pago: referencia Zelle + subida de comprobante → `PAYMENT_REPORTED`.
 - [ ] Panel admin de pagos: cola de pagos reportados, ver comprobante, confirmar o rechazar (rechazo con motivo, el usuario puede re-reportar).
-- [ ] **La confirmación de la parte, con sus dos manos.** El proveedor acepta o
+- [x] **La confirmación de la parte, con sus dos manos.** El proveedor acepta o
       rechaza lo suyo (con motivo), y el admin puede hacerlo en su nombre —que en
       la Fase 1 es el camino normal: se resuelve por teléfono—. Es exactamente el
       `actingSupplierId` del inventario, sin una sola línea de permisos nueva, y el
       registro guarda quién lo hizo de verdad.
+      *Está **la mano del admin**, que es la que la Fase 1 usa; la del proveedor no,
+      porque todavía no existe su portal (ni `supplier_users`, ni
+      `actingSupplierId`). No hace falta rehacer nada para añadirla: la regla vive
+      en `confirmPart`/`declinePart` y la Action solo pasa quién firma, así que el
+      portal llamará a las mismas funciones con su propio `userId`.
+      `order_suppliers` gana `confirmed_at`, `decline_reason` y `decided_by_user_id`
+      (migración 0009), y `fulfillment_status` gana `CONFIRMED`, `DECLINED` y
+      `EXPIRED`: son tres desenlaces y no uno porque al comprador se le cuentan con
+      palabras distintas.*
 - [ ] La puerta: confirmar el pago exige que ninguna parte viva siga en `PENDING`.
       La cola de pagos lo enseña en la fila —"1 proveedor sin confirmar"— y la
       Action lo comprueba; no basta con esconder el botón.
-- [ ] Los dos vencimientos en el cron, y los dos tumban **una parte**, nunca el
+      *La regla existe y está probada (`paymentGate`), y `/admin/orders` ya escribe
+      el motivo en cada fila. Lo que falta es la Action a la que guardar: todavía no
+      hay confirmación de pago que llamarla. Se conecta en el mismo commit que la
+      cola de pagos.*
+- [x] Los dos vencimientos en el cron, y los dos tumban **una parte**, nunca el
       pedido: el de confirmación (el proveedor no contestó) y el de la reserva (había
       confirmado, pero se acabó el tiempo). Los dos dejan la parte en `EXPIRED`
       —`confirmed_at` ya distingue cuál fue— y liberan su stock. El pedido solo se
       cancela solo cuando no le queda ninguna parte viva.
+      *El segundo reloj no pregunta "¿tiene una reserva vencida?" sino "¿le queda
+      alguna viva?". La diferencia tapa un agujero real: el checkout suelta lo
+      vencido de los productos que va a pedir sin saber de qué parte eran, así que
+      una parte confirmada puede quedarse sin reservas y sin ninguna vencida que la
+      delate — `CONFIRMED` para siempre, y al cobrar no habría nada que consumir.*
 - [ ] **La pantalla de decisión del comprador**, que es donde acaban por igual el
       rechazo y el vencimiento. Enseña **el pedido original entero**, línea por
       línea, con lo que pasó con cada una en palabras: "no pudo atenderlo: sin
@@ -589,8 +608,10 @@ schedules. Al revés habría que reescribirlos y migrar pedidos reales. Ver
       confirmar nada. Al seguir se guarda el total nuevo; `total` no se toca nunca.
       El admin puede decidir en nombre del comprador (suplantación), que es como se
       va a resolver la mayoría por WhatsApp.*
-- [ ] Un pedido ya `PAID` no vence: sus reservas están consumidas y el reloj no le
+- [x] Un pedido ya `PAID` no vence: sus reservas están consumidas y el reloj no le
       aplica.
+      *La condición va en el `where` de los dos barridos y no en un `if` después:
+      es la diferencia entre no hacer nada y deshacer una venta.*
 - [ ] Aviso antes de que se caiga, no después: recordatorio al comprador a falta de
       ~24 h con lo que tiene pendiente (pagar, o decidir), y al proveedor que aún no
       ha confirmado. Un pedido perdido por silencio se pierde dos veces.

@@ -24,9 +24,19 @@ export const ORDER_STATUS_LABEL = {
   CANCELLED: "Cancelado",
 } satisfies Record<OrderStatus, string>;
 
-/** El eje de la entrega, que es de cada proveedor por su lado. */
+/**
+ * El eje de cada proveedor por su lado — el rótulo corto, el de la insignia.
+ *
+ * Corto a propósito: cabe en una fila junto al nombre del proveedor y no
+ * pretende explicar nada. La frase que sí explica —con el motivo del rechazo, o
+ * con cuál de los dos relojes venció— la arma `partOutcome` en `decisions.ts`,
+ * porque para escribirla no basta el estado.
+ */
 export const PART_STATUS_LABEL = {
   PENDING: "Pendiente",
+  CONFIRMED: "Confirmado",
   DELIVERED: "Entregado",
+  DECLINED: "Rechazado",
+  EXPIRED: "Vencido",
   CANCELLED: "Cancelado",
 } satisfies Record<FulfillmentStatus, string>;

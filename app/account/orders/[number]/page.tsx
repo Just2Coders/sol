@@ -3,6 +3,7 @@ import { notFound, redirect } from "next/navigation";
 import { Clock, Shop } from "reicon-react";
 
 import { getCurrentUser } from "@/lib/dal";
+import { isPartLive, needsBuyerDecision, partOutcome } from "@/lib/orders/decisions";
 import { ORDER_STATUS_LABEL, PART_STATUS_LABEL } from "@/lib/orders/labels";
 import { getUserOrder } from "@/lib/orders/queries";
 import { formatDeadline, formatUsd } from "@/lib/utils";
@@ -56,24 +57,57 @@ export default async function OrderPage({ params }: OrderPageProps) {
         </p>
       </header>
 
-      {order.status === "PENDING_PAYMENT" && (
-        <section className="border-info-border bg-info-bg mt-8 rounded-md border p-5">
-          <p className="text-info text-body-sm flex gap-2">
-            <Clock aria-hidden className="mt-0.5 size-4 shrink-0" />
-            <span>
-              Tenemos el stock apartado hasta el{" "}
-              <span className="font-medium">{formatDeadline(order.expiresAt)}</span>.
-              El pago se hace por Zelle, y{" "}
-              <span className="font-medium">{order.orderNumber}</span> es la
-              referencia que hay que poner.
-            </span>
+      {/* Mientras el pedido no valga lo que se aceptó pagar, las instrucciones de
+          pago se congelan: pagar una cifra y recibir otra es peor que esperar.
+          El aviso ocupa su sitio para que no parezca que faltan. */}
+      {needsBuyerDecision({ parts: order.parts, acknowledgedTotalUsd: order.acknowledgedTotalUsd }) ? (
+        <section className="border-warning-border bg-warning-bg mt-8 rounded-md border p-5">
+          <p className="text-warning text-body-sm">
+            Algo de este pedido se cayó. Pediste{" "}
+            <span className="font-medium">{formatUsd(order.totalUsd)}</span> y ahora
+            queda en <span className="font-medium">{formatUsd(order.liveTotalUsd)}</span>.
+            Abajo está qué pasó con cada parte. Escríbenos para seguir con lo que
+            queda o cancelarlo — hasta entonces no te vamos a cobrar nada.
           </p>
         </section>
+      ) : order.status === "CANCELLED" ? (
+        // Un pedido cancelado sin una línea que lo cierre es un callejón: se ve
+        // el «$0» y no se sabe si hay algo que hacer, ni si se llegó a cobrar.
+        <section className="border-border mt-8 rounded-md border p-5">
+          <p className="text-muted-foreground text-body-sm">
+            Este pedido no salió adelante y{" "}
+            <span className="text-foreground font-medium">no se te cobró nada</span>.
+            Abajo está qué pasó con cada parte. Lo que estaba apartado ya volvió al
+            catálogo, así que si quieres volver a intentarlo, empieza de nuevo desde{" "}
+            <Link href="/catalog" className="text-primary underline-offset-4 hover:underline">
+              el catálogo
+            </Link>
+            .
+          </p>
+        </section>
+      ) : (
+        order.status === "PENDING_PAYMENT" && (
+          <section className="border-info-border bg-info-bg mt-8 rounded-md border p-5">
+            <p className="text-info text-body-sm flex gap-2">
+              <Clock aria-hidden className="mt-0.5 size-4 shrink-0" />
+              <span>
+                Tenemos el stock apartado hasta el{" "}
+                <span className="font-medium">{formatDeadline(order.expiresAt)}</span>.
+                El pago se hace por Zelle, y{" "}
+                <span className="font-medium">{order.orderNumber}</span> es la
+                referencia que hay que poner.
+              </span>
+            </p>
+          </section>
+        )
       )}
 
       <section className="mt-10 grid gap-8">
         {order.parts.map((part) => (
-          <section key={part.id}>
+          // La parte caída se atenúa pero **no se va**: el pedido se enseña
+          // entero, y una línea que desaparece es la que hace escribir para
+          // preguntar qué pasó con ella.
+          <section key={part.id} className={isPartLive(part.status) ? undefined : "opacity-60"}>
             <div className="flex flex-wrap items-baseline justify-between gap-4">
               <h2 className="text-muted-foreground text-label flex items-center gap-2 font-mono">
                 <Shop aria-hidden className="size-3.5 shrink-0" />
@@ -83,6 +117,11 @@ export default async function OrderPage({ params }: OrderPageProps) {
                 {PART_STATUS_LABEL[part.status]}
               </span>
             </div>
+
+            {/* Lo que le pasó, en palabras. El rótulo de arriba dice «Vencido»;
+                esto dice si fue porque no contestó o porque aceptó y se le acabó
+                el tiempo, que para el comprador son dos cosas distintas. */}
+            <p className="text-muted-foreground text-body-sm mt-1">{partOutcome(part)}</p>
 
             <ul className="mt-3 grid gap-2">
               {part.items.map((item) => (

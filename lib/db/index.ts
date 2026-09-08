@@ -42,3 +42,21 @@ export const db = drizzle(pool, { schema });
  * transacción abre una segunda conexión, y esa escritura no se revierte.
  */
 export type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+/**
+ * "Escribe por aquí", sin decir si *aquí* es una transacción o el cliente suelto.
+ *
+ * Lo piden las operaciones que se usan de las dos formas: soltar las reservas de
+ * una parte es un paso más dentro de la transacción que la rechaza, y también es
+ * el barrido entero que corre el cron por su cuenta. Sin esto habría dos copias
+ * de la misma escritura, y la que se usa menos es la que se queda atrás.
+ *
+ * No lo piden las que **solo** valen dentro de una transacción: esas reciben el
+ * `Tx` como primer parámetro y obligatorio (`reserveForPart`), porque ahí
+ * poder pasar `db` sería justo el error.
+ */
+export type Executor = Pick<Tx, "select" | "insert" | "update" | "execute">;
+
+// El cliente suelto tiene que valer como ejecutor, y esto lo comprueba al
+// compilar en vez de al llamar.
+db satisfies Executor;

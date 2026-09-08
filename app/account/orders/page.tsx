@@ -54,7 +54,23 @@ export default async function OrdersPage() {
                   {order.partCount === 1
                     ? "un proveedor"
                     : `${order.partCount} proveedores`}
+                  {/* El marcador solo aparece cuando todavía se espera a
+                      alguien: "1 de 1 confirmado" en un pedido resuelto es ruido
+                      que compite con lo que sí cambió. */}
+                  {!order.progress.allAnswered && (
+                    <>
+                      {" "}
+                      · {order.progress.answered} de {order.progress.live} confirmados
+                    </>
+                  )}
                 </p>
+
+                {order.liveTotalUsd !== order.totalUsd && (
+                  <p className="text-warning text-body-sm mt-3">
+                    Algo se cayó: pediste {formatUsd(order.totalUsd)}. Entra para ver
+                    qué pasó y decidir.
+                  </p>
+                )}
 
                 {order.status === "PENDING_PAYMENT" && (
                   <p className="text-muted-foreground text-body-sm mt-3">

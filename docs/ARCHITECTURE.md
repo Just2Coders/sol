@@ -95,7 +95,12 @@ lib/                    Lógica de servidor reutilizable (NO específica de una 
                         proveedor real, cobertura y lo vendible
     service.ts          Crea el pedido —orden, partes, líneas y reservas— en una
                         sola transacción
-    queries.ts          Los pedidos como los ve quien los hizo
+    decisions.ts        Qué parte sigue viva, cuánto se pagaría hoy y si se puede
+                        cobrar (puro)
+    fulfillment.ts      Mueve una parte a su desenlace y arrastra lo que cuelga:
+                        stock, plazo del pedido y el propio pedido
+    queries.ts          Los pedidos como los ve quien los hizo, y como los ve el
+                        admin (con la puerta del cobro ya resuelta)
     labels.ts           Los estados del pedido en el idioma del comprador (puro)
   products/queries.ts   Lecturas de productos (panel admin)
   kits/queries.ts       Lecturas de kits con sus componentes (panel admin)
@@ -430,6 +435,35 @@ en silencio. La cobertura de entrega sube por la jerarquía de zonas —quien cu
 la provincia entrega en sus municipios, no al revés—, que es la dirección
 contraria a la del filtro del catálogo: allí se pregunta "¿quién opera por aquí?"
 y aquí "¿me lo llevas a esta puerta?".
+
+### La parte se cae sola, y el pedido no
+
+Una parte tiene tres finales además de entregar, y son tres y no uno porque al
+comprador se le cuentan con palabras distintas: `DECLINED` trae el motivo que
+escribió el proveedor, `EXPIRED` significa dos cosas según si llegó a aceptar
+—`confirmed_at` es lo único que las separa— y `CANCELLED` es una decisión de
+dentro. Meterlos en un solo estado obligaría a adivinar cuál fue para escribir la
+frase.
+
+Los tres pasan por **un solo camino** (`settlePart`), porque lo que cambia entre
+ellos es el rótulo y lo que no cambia es lo que no se puede olvidar: soltar el
+stock retenido, alejar el vencimiento del pedido —el mínimo de las reservas que
+quedan, que solo puede alargarse— y cancelar el pedido si no le queda ninguna
+parte viva. Todo en una transacción: una parte rechazada cuyo stock siguiera
+retenido es mercancía muerta que nadie va a soltar, porque su reserva sigue
+pareciendo válida.
+
+Quien decide se relee **dentro** de la transacción y con `for update`. Entre que
+el admin abre la pantalla y pulsa el botón, el cron pudo haber vencido esa misma
+parte.
+
+### La puerta del cobro
+
+No se confirma un pago mientras un proveedor no haya dicho que sí, ni mientras el
+total vivo se haya separado de lo que el comprador aceptó pagar. `paymentGate`
+devuelve **por qué** y no un booleano: la cola de pagos lo escribe en la fila
+—"1 proveedor sin confirmar"— para que se sepa a quién llamar, y esconder el
+botón no es la defensa.
 
 > Esta máquina de estados coincide con el flujo Zelle descrito en
 > [`PLAN.md`](../PLAN.md) (Fase 1). La integración automática con suby.fi queda

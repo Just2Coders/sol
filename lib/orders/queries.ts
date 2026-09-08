@@ -2,6 +2,7 @@ import "server-only";
 import { and, desc, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { orders } from "@/lib/db/schema";
+import { confirmationProgress, liveTotalUsd, paymentGate } from "./decisions";
 
 /**
  * Los pedidos como los ve quien los hizo.
@@ -12,8 +13,8 @@ import { orders } from "@/lib/db/schema";
  * al leer es lo que impide que sirva para mirar el pedido de otro.
  *
  * Lo que se enseña es **el pedido que se hizo**, entero: nada se recorta ni
- * desaparece. Con la confirmación de partes (Etapa 7) cada línea llevará al lado
- * lo que le pasó; hoy todas están vivas porque todavía no hay quien las tumbe.
+ * desaparece. Cada parte lleva al lado lo que le pasó, y las caídas se quedan en
+ * la lista — un pedido que encoge solo es el que genera la llamada.
  */
 
 export type OrderSummary = {
@@ -27,6 +28,8 @@ export type OrderSummary = {
   createdAt: Date;
   /** Cuántos proveedores entregan este pedido. */
   partCount: number;
+  /** El marcador «2 de 3 confirmados» que se mira mientras se espera. */
+  progress: ReturnType<typeof confirmationProgress>;
 };
 
 export async function getUserOrders(userId: string): Promise<OrderSummary[]> {
@@ -47,7 +50,8 @@ export async function getUserOrders(userId: string): Promise<OrderSummary[]> {
   return rows.map((row) => ({
     ...row,
     partCount: row.parts.length,
-    liveTotalUsd: liveTotal(row.parts),
+    liveTotalUsd: liveTotalUsd(row.parts),
+    progress: confirmationProgress(row.parts),
   }));
 }
 
@@ -68,20 +72,73 @@ export async function getUserOrder(userId: string, orderNumber: string) {
   });
   if (!order) return null;
 
-  return { ...order, liveTotalUsd: liveTotal(order.parts) };
+  return {
+    ...order,
+    liveTotalUsd: liveTotalUsd(order.parts),
+    progress: confirmationProgress(order.parts),
+  };
 }
 
 /**
- * Lo que se pagaría hoy: la suma de las partes que siguen en pie.
+ * Los pedidos como los ve el admin: todos, y con la puerta del cobro ya resuelta.
  *
- * Se calcula y no se guarda, a propósito. Conviven tres cifras que dicen tres
- * cosas distintas —lo que se pidió (`totalUsd`, inmutable), esto, y lo que el
- * comprador aceptó pagar (`acknowledgedTotalUsd`)— y guardar la del medio
- * obligaría a mantenerla sincronizada con cada parte que se cae.
+ * La diferencia con las de arriba no es el filtro sino **qué pregunta responden**.
+ * Al comprador se le enseña en qué va lo suyo; aquí se enseña qué hay que hacer:
+ * a quién llamar porque no ha confirmado, y qué pedido está listo para cobrarse.
+ * Por eso la fila trae el motivo del bloqueo y no un booleano — «1 proveedor sin
+ * confirmar» dice a quién llamar, «no se puede» no.
  */
-function liveTotal(parts: { subtotalUsd: number; status: string }[]): number {
-  const total = parts
-    .filter((part) => part.status !== "CANCELLED")
-    .reduce((sum, part) => sum + part.subtotalUsd, 0);
-  return Math.round(total * 100) / 100;
+
+export type AdminOrderRow = Awaited<ReturnType<typeof getAdminOrders>>[number];
+
+export async function getAdminOrders() {
+  const rows = await db.query.orders.findMany({
+    orderBy: [desc(orders.createdAt)],
+    with: {
+      user: { columns: { email: true } },
+      parts: {
+        columns: { id: true, subtotalUsd: true, status: true },
+        with: { supplier: { columns: { name: true } } },
+      },
+    },
+  });
+
+  return rows.map((row) => ({
+    ...row,
+    liveTotalUsd: liveTotalUsd(row.parts),
+    progress: confirmationProgress(row.parts),
+    gate: paymentGate({
+      parts: row.parts,
+      acknowledgedTotalUsd: row.acknowledgedTotalUsd,
+    }),
+  }));
+}
+
+export type AdminOrderDetail = NonNullable<Awaited<ReturnType<typeof getAdminOrder>>>;
+
+export async function getAdminOrder(orderNumber: string) {
+  const order = await db.query.orders.findFirst({
+    where: eq(orders.orderNumber, orderNumber),
+    with: {
+      user: { columns: { email: true, name: true } },
+      zone: { columns: { name: true } },
+      parts: {
+        with: {
+          supplier: { columns: { name: true, slug: true, phone: true } },
+          items: true,
+        },
+      },
+    },
+  });
+  if (!order) return null;
+
+  return {
+    ...order,
+    liveTotalUsd: liveTotalUsd(order.parts),
+    progress: confirmationProgress(order.parts),
+    gate: paymentGate({
+      parts: order.parts,
+      acknowledgedTotalUsd: order.acknowledgedTotalUsd,
+    }),
+  };
 }

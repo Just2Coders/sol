@@ -11,8 +11,11 @@ import {
   type CartSummary,
   type CheckoutProblem,
 } from "@/lib/orders/revalidate";
+import { confirmPart, declinePart } from "@/lib/orders/fulfillment";
 import { placeOrder } from "@/lib/orders/service";
 import { getSession } from "@/lib/session";
+import { verifyAdmin } from "@/lib/dal";
+import type { ActionState } from "@/lib/forms";
 
 /**
  * Las dos entradas del checkout: mirar y comprar.
@@ -189,6 +192,70 @@ export async function placeOrderAction(
 
   revalidatePath("/account/orders");
   return { orderNumber: placed.order.orderNumber };
+}
+
+/**
+ * El sí o el no de un proveedor sobre su parte, firmado por quien lo escribe.
+ *
+ * Hoy solo entra el admin, y no es un atajo: en la Fase 1 esto se resuelve por
+ * teléfono y el registro guarda a la persona que lo tecleó, no al proveedor. El
+ * día que el proveedor tenga su portal, llamará a las **mismas** dos funciones
+ * del service con su propio `userId` — la regla de qué se puede decidir y qué
+ * arrastra consigo no vive aquí, así que no habrá que reescribirla.
+ *
+ * El motivo es obligatorio al rechazar porque es lo único que el comprador va a
+ * leer para decidir si sigue con el resto. Sin él, la pantalla de decisión le
+ * pide elegir a ciegas.
+ */
+const decideSchema = z
+  .object({
+    partId: idSchema,
+    decision: z.enum(["CONFIRM", "DECLINE"]),
+    reason: z.string().trim().max(300).optional(),
+  })
+  .refine((data) => data.decision !== "DECLINE" || Boolean(data.reason), {
+    path: ["reason"],
+    error: "Di por qué no puede atenderlo: es lo que el comprador va a leer.",
+  });
+
+export async function decideOrderPart(
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const session = await verifyAdmin();
+
+  const fields = decideSchema.safeParse({
+    partId: formData.get("partId"),
+    decision: formData.get("decision"),
+    reason: formData.get("reason") ?? undefined,
+  });
+  if (!fields.success) {
+    return { errors: z.flattenError(fields.error).fieldErrors };
+  }
+
+  const { partId, decision, reason } = fields.data;
+  const result =
+    decision === "CONFIRM"
+      ? await confirmPart({ partId, actorUserId: session.userId })
+      : await declinePart({ partId, reason: reason!, actorUserId: session.userId });
+
+  if (!result.ok) {
+    return {
+      message:
+        result.reason === "NOT_FOUND"
+          ? "Esa parte ya no existe."
+          : // El cron pudo haberla vencido entre que se abrió la pantalla y se
+            // pulsó el botón. Decirlo es mejor que un error genérico: la página
+            // se recarga y se ve en qué quedó.
+            "Esa parte ya estaba resuelta. Recarga para ver en qué quedó.",
+    };
+  }
+
+  revalidatePath("/admin/orders");
+  revalidatePath(`/admin/orders/[number]`, "page");
+  revalidatePath("/account/orders");
+  revalidatePath("/account/orders/[number]", "page");
+  return { success: true };
 }
 
 /** El carrito viaja como JSON en un campo oculto: es una lista, no un formulario. */

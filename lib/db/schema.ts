@@ -47,18 +47,30 @@ export const paymentStatus = pgEnum("payment_status", [
 export const orderItemType = pgEnum("order_item_type", ["PRODUCT", "KIT", "SERVICE"]);
 
 /**
- * Cómo va la entrega de **la parte de un proveedor**, no la del pedido entero.
+ * Cómo va **la parte de un proveedor**, no el pedido entero.
  *
  * El pago es global —se cobra o no se cobra el pedido completo, ver
- * `orderStatus`— pero la entrega es de cada uno por su lado: uno puede haber
- * llevado ya su batería mientras el otro todavía no monta los paneles. Y una
- * parte se puede caer sola (`CANCELLED`: sin stock, el proveedor no puede) sin
- * arrastrar al resto del pedido.
+ * `orderStatus`— pero esto es de cada uno por su lado: uno puede haber llevado
+ * ya su batería mientras el otro todavía no monta los paneles. Y una parte se
+ * puede caer sola sin arrastrar al resto del pedido.
+ *
+ * Los tres desenlaces de abajo se distinguen porque **se le cuentan al comprador
+ * con palabras distintas**, no por prolijidad: quien rechaza dio un motivo, quien
+ * vence no dijo nada, y quien cancela fue una decisión de dentro. Meterlos en un
+ * solo `CANCELLED` obligaría a adivinar cuál fue para escribir la frase.
+ *
+ * `EXPIRED` cubre los dos relojes, que son distintos y acaban igual: no contestó
+ * a tiempo, o había aceptado y se le acabó la reserva antes de que el pago
+ * llegara. Lo que los separa es `confirmedAt`, y por eso esa columna existe
+ * aunque el estado ya diga que aceptó.
  */
 export const fulfillmentStatus = pgEnum("fulfillment_status", [
-  "PENDING", // aún no entregado
+  "PENDING", // nadie ha dicho que sí todavía; corre `confirmationDueAt`
+  "CONFIRMED", // el proveedor acepta; sigue corriendo la reserva
   "DELIVERED", // este proveedor ya entregó lo suyo
-  "CANCELLED", // esta parte se cayó; el resto del pedido sigue
+  "DECLINED", // dijo que no, y `declineReason` dice por qué
+  "EXPIRED", // se acabó el tiempo; `confirmedAt` dice cuál de los dos relojes
+  "CANCELLED", // la tumbó el comprador o el admin; el resto del pedido sigue
 ]);
 
 /**
@@ -517,6 +529,27 @@ export const orderSuppliers = pgTable(
      * vencer cae **su** parte, se libera su stock y el resto sigue.
      */
     confirmationDueAt: timestamp("confirmation_due_at", { withTimezone: true }).notNull(),
+    /**
+     * Cuándo aceptó. Nulo mientras no lo haya hecho, y **se queda escrito aunque
+     * la parte acabe en `EXPIRED`**: es lo único que distingue al proveedor que
+     * nunca contestó del que dijo que sí y se quedó esperando el pago. Al
+     * comprador se le cuentan como dos cosas distintas porque lo son.
+     */
+    confirmedAt: timestamp("confirmed_at", { withTimezone: true }),
+    /**
+     * Por qué dijo que no, en sus palabras. Es lo que el comprador lee en la
+     * pantalla de decisión; sin esto, «no pudo atenderlo» es todo lo que se le
+     * puede decir y no le sirve para elegir.
+     */
+    declineReason: text("decline_reason"),
+    /**
+     * Quién lo decidió de verdad. Nulo cuando fue el reloj.
+     *
+     * En la Fase 1 casi siempre es el admin resolviendo por teléfono en nombre
+     * del proveedor, así que la columna guarda a la persona y la parte ya sabe de
+     * qué proveedor es: no hace falta el par `onBehalfOf` de `stock_movements`.
+     */
+    decidedByUserId: uuid("decided_by_user_id").references(() => users.id),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -528,6 +561,9 @@ export const orderSuppliers = pgTable(
     // El camino contrario —"qué le debo a este proveedor"—, que es por donde
     // entran la liquidación y la guarda de borrado de proveedores.
     index("order_suppliers_supplier_id_idx").on(t.supplierId),
+    // Por donde entra el barrido: las que siguen esperando respuesta y ya se
+    // pasaron de hora. Sin esto el cron lee la tabla entera cada madrugada.
+    index("order_suppliers_status_confirmation_due_at_idx").on(t.status, t.confirmationDueAt),
   ],
 );
 
