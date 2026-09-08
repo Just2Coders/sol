@@ -128,12 +128,14 @@ export function CartPanel({ className }: { className?: string }) {
                 </span>
               </div>
 
-              <Button size="lg" className="mt-4 w-full" disabled>
-                Ir al pago
+              <Button size="lg" className="mt-4 w-full" asChild>
+                <Link href="/checkout" onClick={close}>
+                  Ir al pago
+                </Link>
               </Button>
               <div className="mt-3 flex items-baseline justify-between gap-6">
                 <p className="text-muted-foreground text-marginalia font-mono">
-                  checkout · próxima etapa
+                  el precio y el stock se revisan al pagar
                 </p>
                 <button
                   type="button"

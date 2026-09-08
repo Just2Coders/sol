@@ -119,10 +119,10 @@ export function cartCoversService(
 }
 
 /** Lo que entrega un proveedor dentro del pedido: sus líneas y lo que suman. */
-export type CartGroup = {
+export type CartGroup<Line extends CartLine = CartLine> = {
   supplierSlug: string;
   supplierName: string;
-  lines: CartLine[];
+  lines: Line[];
   subtotalUsd: number;
 };
 
@@ -138,8 +138,8 @@ export type CartGroup = {
  * alfabético: añadir algo no debe reordenar lo que el visitante ya tenía puesto
  * delante de los ojos.
  */
-export function cartGroups(lines: CartLine[]): CartGroup[] {
-  const groups = new Map<string, CartGroup>();
+export function cartGroups<Line extends CartLine>(lines: Line[]): CartGroup<Line>[] {
+  const groups = new Map<string, CartGroup<Line>>();
 
   for (const line of lines) {
     const group = groups.get(line.supplierSlug);

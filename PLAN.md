@@ -483,22 +483,27 @@ schedules. Al revés habría que reescribirlos y migrar pedidos reales. Ver
 - [x] Bloque "añadir instalación" en la ficha de producto/kit (lo que diga
       `installation_offers`) y línea de servicio en el carrito: sin stock, y en
       `PER_UNIT` la cantidad son unidades de obra, no piezas.
-- [ ] Checkout: resumen **agrupado por proveedor**, datos de contacto/entrega,
+- [x] Checkout: resumen **agrupado por proveedor**, datos de contacto/entrega,
       confirmación → crea la orden `PENDING_PAYMENT` con una fila de
       `order_suppliers` por grupo. Si la orden lleva instalación, la dirección de
       entrega es la de la obra; la fecha se coordina a mano en esta fase.
-- [ ] Revalidación del carrito en el servidor, grupo a grupo: proveedor activo,
+      *El carrito vive en el navegador, así que el resumen no lo puede armar la
+      página: `previewCheckout` manda las líneas y devuelve el pedido ya releído,
+      y se repite cada vez que cambia la zona porque la cobertura depende de ella.*
+- [x] Revalidación del carrito en el servidor, grupo a grupo: proveedor activo,
       item activo y de ese proveedor, precio releído **del schedule y no de la
       caché**, stock suficiente y **cobertura de la zona de entrega**. Si un grupo
       falla se para el checkout y se dice cuál — nunca se descarta una línea en
       silencio.
-- [ ] El stock no se comprueba, se **reserva**: `UPDATE products SET reserved =
+      *`lib/orders/revalidate.ts`, y por ahí pasan las dos entradas: la que pinta
+      el resumen y la que crea el pedido. Lo que se ve es lo que se cobra.*
+- [x] El stock no se comprueba, se **reserva**: `UPDATE products SET reserved =
       reserved + n WHERE id = ? AND stock − reserved >= n`. Cero filas devueltas
       significa que no había, y es atómico en una sola sentencia — sin lock abierto
       entre dos viajes a la base. La reserva nace con su `expires_at` ya calculado
       —`reservation_hold_hours` del proveedor, o las 72 h de la plataforma— y cuelga
       de su `order_suppliers`.
-- [ ] `orders.expires_at` = la más temprana de las reservas vivas del pedido, y
+- [x] `orders.expires_at` = la más temprana de las reservas vivas del pedido, y
       `confirmation_due_at` de cada parte = `min(24 h, el hold de su proveedor)`:
       no tiene sentido retener tres días para alguien que aún no ha dicho que sí.
       Se recalcula el mínimo cada vez que una parte se cae; puede alargarse, nunca
@@ -506,58 +511,92 @@ schedules. Al revés habría que reescribirlos y migrar pedidos reales. Ver
       _Un carrito solo de servicios no reserva nada y el mínimo saldría vacío: ahí
       manda el default de la plataforma. Es el caso que se olvida y deja un pedido
       sin vencimiento._
-- [ ] El checkout **dice hasta cuándo aguanta antes de que el comprador confirme**,
+- [x] El checkout **dice hasta cuándo aguanta antes de que el comprador confirme**,
       no después: "reservado hasta el jueves 14 a las 18:00". Y si esa ventana no le
       da para pagar por el medio disponible, se avisa ahí —con qué proveedor la
       acorta— mientras todavía puede quitarlo del carrito.
-- [ ] **El driver de base de datos tiene que cambiar en esta etapa.** `lib/db/index.ts`
+- [x] **El driver de base de datos tiene que cambiar en esta etapa.** `lib/db/index.ts`
       usa `drizzle-orm/neon-http`, que es HTTP de un solo tiro: manda un lote de
       queries pero no deja leer, decidir en JS y escribir dentro de la misma
       transacción. Crear la orden son varias escrituras (`orders`,
       `order_suppliers`, `order_items` y N reservas) que o entran todas o no entra
       ninguna, así que el camino de escritura necesita `neon-serverless` con `Pool`.
       Las lecturas se pueden quedar como están.
-- [ ] Y una validación que no es por grupo sino entre grupos: un servicio que no
+- [x] Y una validación que no es por grupo sino entre grupos: un servicio que no
       sea `ANY` tiene que llegar con su equipo. En el carrito eso es un item del
       proveedor que toque —el suyo si es `OWN`, el de cualquiera si es
       `PLATFORM`— y sale de los propios grupos, sin ir a la base. Con «Mis
       equipos» (Etapa 9) el equipo podrá venir además de un pedido anterior, y
       entonces sí hay que consultarlo.
-- [ ] La zona de entrega deja de ser opcional cuando hay algo que entregar:
+- [x] La zona de entrega deja de ser opcional cuando hay algo que entregar:
       `orders.zone_id` es lo que se compara contra `supplier_zones`, así que sin
       ella no hay nada que validar. Se propone la de la cookie o la del usuario,
       y se puede cambiar en el formulario.
-- [ ] Un servicio `ANY` contratado solo es trabajo sobre equipo que el cliente ya
+      *Acabó siendo obligatoria siempre, no solo con equipo: un servicio también
+      se hace en un sitio y el instalador también tiene que llegar hasta ahí, así
+      que un pedido de pura mano de obra necesita igualmente su zona para poder
+      comprobar la cobertura.*
+- [x] Un servicio `ANY` contratado solo es trabajo sobre equipo que el cliente ya
       tiene y la plataforma no conoce: el checkout le pide describirlo, y eso va
       a `orders.notes` para que el instalador sepa a qué va.
-- [ ] Página "Mis órdenes" en la cuenta del usuario, con los tres ejes en tiempo
+      *Quién lo pide lo decide el servidor: el alcance del servicio no viaja en la
+      línea del carrito, así que el resumen devuelve `needsEquipmentNote` y el
+      formulario cambia la etiqueta del campo con eso.*
+- [x] Página "Mis órdenes" en la cuenta del usuario, con los tres ejes en tiempo
       real: el pago para el pedido, y la aceptación y la entrega para cada
       proveedor. El marcador "2 de 3 confirmados" va arriba, y al lado la cuenta
       atrás del pedido: es lo que el comprador mira mientras espera, y no saberlo es
       lo que le hace escribir para preguntar.
+      *Los tres ejes están. El marcador solo aparece mientras se espera a alguien:
+      «1 de 1 confirmado» en un pedido resuelto compite con lo que sí cambió.*
 - [ ] En el detalle, **el pedido original completo y qué pasó con cada línea**: la
       que sigue en pie con su fecha de reserva —para que se vea cuál aprieta—, y la
       que se cayó con el motivo escrito y sin desaparecer de la lista. Un pedido que
       se recorta solo, o que caduca sin decir quién lo frenaba, es el que genera la
       llamada.
+      *El detalle enseña el pedido entero, y cada parte lleva al lado lo que le
+      pasó en palabras —con el motivo del rechazo, o diciendo cuál de los dos
+      relojes venció—. Las caídas se atenúan pero no se van.
+      Falta el grano fino: **por línea** y no por parte, que es la confirmación
+      parcial («confirma 2 de 3») y necesita `confirmed_quantity`. Se dejó fuera
+      porque no es una columna más: cambia el subtotal de la parte, las reservas y
+      la cantidad de la línea, y merece su propio paso.*
 
 ### Etapa 7 — Pago manual Zelle (2 días) ★ meta de la fase
 - [ ] Página de instrucciones de pago post-checkout: datos Zelle de la cuenta central, monto, número de orden como referencia.
 - [ ] Formulario de reporte de pago: referencia Zelle + subida de comprobante → `PAYMENT_REPORTED`.
 - [ ] Panel admin de pagos: cola de pagos reportados, ver comprobante, confirmar o rechazar (rechazo con motivo, el usuario puede re-reportar).
-- [ ] **La confirmación de la parte, con sus dos manos.** El proveedor acepta o
+- [x] **La confirmación de la parte, con sus dos manos.** El proveedor acepta o
       rechaza lo suyo (con motivo), y el admin puede hacerlo en su nombre —que en
       la Fase 1 es el camino normal: se resuelve por teléfono—. Es exactamente el
       `actingSupplierId` del inventario, sin una sola línea de permisos nueva, y el
       registro guarda quién lo hizo de verdad.
+      *Está **la mano del admin**, que es la que la Fase 1 usa; la del proveedor no,
+      porque todavía no existe su portal (ni `supplier_users`, ni
+      `actingSupplierId`). No hace falta rehacer nada para añadirla: la regla vive
+      en `confirmPart`/`declinePart` y la Action solo pasa quién firma, así que el
+      portal llamará a las mismas funciones con su propio `userId`.
+      `order_suppliers` gana `confirmed_at`, `decline_reason` y `decided_by_user_id`
+      (migración 0009), y `fulfillment_status` gana `CONFIRMED`, `DECLINED` y
+      `EXPIRED`: son tres desenlaces y no uno porque al comprador se le cuentan con
+      palabras distintas.*
 - [ ] La puerta: confirmar el pago exige que ninguna parte viva siga en `PENDING`.
       La cola de pagos lo enseña en la fila —"1 proveedor sin confirmar"— y la
       Action lo comprueba; no basta con esconder el botón.
-- [ ] Los dos vencimientos en el cron, y los dos tumban **una parte**, nunca el
+      *La regla existe y está probada (`paymentGate`), y `/admin/orders` ya escribe
+      el motivo en cada fila. Lo que falta es la Action a la que guardar: todavía no
+      hay confirmación de pago que llamarla. Se conecta en el mismo commit que la
+      cola de pagos.*
+- [x] Los dos vencimientos en el cron, y los dos tumban **una parte**, nunca el
       pedido: el de confirmación (el proveedor no contestó) y el de la reserva (había
       confirmado, pero se acabó el tiempo). Los dos dejan la parte en `EXPIRED`
       —`confirmed_at` ya distingue cuál fue— y liberan su stock. El pedido solo se
       cancela solo cuando no le queda ninguna parte viva.
+      *El segundo reloj no pregunta "¿tiene una reserva vencida?" sino "¿le queda
+      alguna viva?". La diferencia tapa un agujero real: el checkout suelta lo
+      vencido de los productos que va a pedir sin saber de qué parte eran, así que
+      una parte confirmada puede quedarse sin reservas y sin ninguna vencida que la
+      delate — `CONFIRMED` para siempre, y al cobrar no habría nada que consumir.*
 - [ ] **La pantalla de decisión del comprador**, que es donde acaban por igual el
       rechazo y el vencimiento. Enseña **el pedido original entero**, línea por
       línea, con lo que pasó con cada una en palabras: "no pudo atenderlo: sin
@@ -569,8 +608,10 @@ schedules. Al revés habría que reescribirlos y migrar pedidos reales. Ver
       confirmar nada. Al seguir se guarda el total nuevo; `total` no se toca nunca.
       El admin puede decidir en nombre del comprador (suplantación), que es como se
       va a resolver la mayoría por WhatsApp.*
-- [ ] Un pedido ya `PAID` no vence: sus reservas están consumidas y el reloj no le
+- [x] Un pedido ya `PAID` no vence: sus reservas están consumidas y el reloj no le
       aplica.
+      *La condición va en el `where` de los dos barridos y no en un `if` después:
+      es la diferencia entre no hacer nada y deshacer una venta.*
 - [ ] Aviso antes de que se caiga, no después: recordatorio al comprador a falta de
       ~24 h con lo que tiene pendiente (pagar, o decidir), y al proveedor que aún no
       ha confirmado. Un pedido perdido por silencio se pierde dos veces.

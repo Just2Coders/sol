@@ -31,9 +31,12 @@ app/                    Presentación: rutas, páginas (RSC) y Server Actions
   admin/                Panel de administración (rol ADMIN): zones, suppliers,
                         supplier-leads, products, kits, services,
                         service-categories
-  account/              Área del cliente autenticado
+  account/              Área del cliente autenticado, con /orders y el detalle
+                        de cada pedido
   catalog/              Catálogo público: listado y fichas de /products/[slug],
                         /kits/[slug] y /services/[slug]
+  checkout/             Confirmar el pedido. Único punto del catálogo que exige
+                        sesión (el resto se navega sin cuenta)
   globals.css           Design system: roles de color/tipografía y su registro en Tailwind
 components/
   ui/                   Primitivos de shadcn/ui (button, input, card, ...)
@@ -46,6 +49,8 @@ components/
                         secciones, componentes del kit, proveedor y su cobertura,
                         y la tira de "más de este proveedor"
   cart/                 Carrito: botón de la ficha y panel lateral del header
+  checkout/             El formulario del pedido y el resumen que devuelve el
+                        servidor con los precios releídos
 lib/                    Lógica de servidor reutilizable (NO específica de una ruta)
   cart/
     lines.ts            El carrito como dato puro: la línea, sus sumas y su
@@ -81,6 +86,22 @@ lib/                    Lógica de servidor reutilizable (NO específica de una 
                         promover (puro)
     service.ts          El ÚNICO sitio que escribe precio: abre la línea de
                         tiempo, anota un cambio y promueve los vencidos
+  orders/
+    numbering.ts        SOL-1042: el número que se dicta por teléfono y que es
+                        la referencia del Zelle (puro)
+    checkout-rules.ts   Qué servicio se queda sin equipo y hasta cuándo aguanta
+                        el pedido (puro)
+    revalidate.ts       El carrito releído contra la base: precio del schedule,
+                        proveedor real, cobertura y lo vendible
+    service.ts          Crea el pedido —orden, partes, líneas y reservas— en una
+                        sola transacción
+    decisions.ts        Qué parte sigue viva, cuánto se pagaría hoy y si se puede
+                        cobrar (puro)
+    fulfillment.ts      Mueve una parte a su desenlace y arrastra lo que cuelga:
+                        stock, plazo del pedido y el propio pedido
+    queries.ts          Los pedidos como los ve quien los hizo, y como los ve el
+                        admin (con la puerta del cobro ya resuelta)
+    labels.ts           Los estados del pedido en el idioma del comprador (puro)
   products/queries.ts   Lecturas de productos (panel admin)
   kits/queries.ts       Lecturas de kits con sus componentes (panel admin)
   services/
@@ -371,6 +392,78 @@ Los dos carriles se cruzan en un solo sitio: la orden llega a `COMPLETED` cuando
 queda `CANCELLED`. Nada más: el pago es global —se cobra o no se cobra el pedido
 entero— y la entrega es de cada proveedor por separado, que es exactamente lo
 que el admin coordina y liquida por su lado.
+
+### Los plazos del pedido salen de un solo ajuste
+
+Un pedido tiene cuatro esperas —que el proveedor confirme, que el stock siga
+retenido, que el comprador decida si algo se cae, y que pague— y modeladas como
+cuatro ajustes independientes se contradicen en cuanto alguien toca uno. Aquí hay
+**uno** (`suppliers.reservation_hold_hours`, 72 h si no dice nada) y el resto se
+deriva en `lib/inventory/holds.ts`:
+
+| Espera | Columna | De dónde sale |
+|---|---|---|
+| Retención del stock | `stock_reservations.expires_at` | el hold del proveedor |
+| Confirmación del proveedor | `order_suppliers.confirmation_due_at` | `min(24 h, su hold)` |
+| Pago y decisión del comprador | `orders.expires_at` | el **más temprano** de las reservas vivas |
+
+`orders.expires_at` es el único plazo que ve el comprador: uno con tres
+proveedores tendría tres fechas y eso no se le puede enseñar a nadie. Llegar ahí
+tumba **la parte cuya reserva era**, no el pedido, así que el mínimo se recalcula
+sobre las que quedan — solo puede alargarse. Una parte de solo servicios no
+retiene nada y no entra en el cálculo; un carrito entero de servicios cae al
+default de la plataforma, que es el caso que se olvida y deja un pedido sin
+vencimiento.
+
+Y `orders.total_usd` es **inmutable**. Conviven tres cifras que nunca se pisan: lo
+que se pidió (`total_usd`), lo que se pagaría hoy (la suma de las partes vivas,
+que se calcula y no se guarda) y lo que el comprador aceptó pagar
+(`acknowledged_total_usd`). Mientras las dos últimas difieran hay algo que
+decidir, sin necesidad de un estado nuevo que mantener sincronizado.
+
+### El checkout relee el carrito entero antes de cobrarlo
+
+El carrito es una **foto** del navegador. De lo que manda el cliente solo se
+respetan el par tipo + id y la cantidad; el precio sale de `price_schedules` —no
+de la columna `price_usd`, que es su caché—, el proveedor sale del item, y la
+cobertura se comprueba contra la zona de entrega. Todo en `lib/orders/
+revalidate.ts`, y **las dos** entradas del checkout pasan por ahí: la que pinta
+el resumen y la que crea el pedido. Lo que se ve es lo que se cobra.
+
+Cuando algo falla se para el checkout y se dice cuál; nunca se descarta una línea
+en silencio. La cobertura de entrega sube por la jerarquía de zonas —quien cubre
+la provincia entrega en sus municipios, no al revés—, que es la dirección
+contraria a la del filtro del catálogo: allí se pregunta "¿quién opera por aquí?"
+y aquí "¿me lo llevas a esta puerta?".
+
+### La parte se cae sola, y el pedido no
+
+Una parte tiene tres finales además de entregar, y son tres y no uno porque al
+comprador se le cuentan con palabras distintas: `DECLINED` trae el motivo que
+escribió el proveedor, `EXPIRED` significa dos cosas según si llegó a aceptar
+—`confirmed_at` es lo único que las separa— y `CANCELLED` es una decisión de
+dentro. Meterlos en un solo estado obligaría a adivinar cuál fue para escribir la
+frase.
+
+Los tres pasan por **un solo camino** (`settlePart`), porque lo que cambia entre
+ellos es el rótulo y lo que no cambia es lo que no se puede olvidar: soltar el
+stock retenido, alejar el vencimiento del pedido —el mínimo de las reservas que
+quedan, que solo puede alargarse— y cancelar el pedido si no le queda ninguna
+parte viva. Todo en una transacción: una parte rechazada cuyo stock siguiera
+retenido es mercancía muerta que nadie va a soltar, porque su reserva sigue
+pareciendo válida.
+
+Quien decide se relee **dentro** de la transacción y con `for update`. Entre que
+el admin abre la pantalla y pulsa el botón, el cron pudo haber vencido esa misma
+parte.
+
+### La puerta del cobro
+
+No se confirma un pago mientras un proveedor no haya dicho que sí, ni mientras el
+total vivo se haya separado de lo que el comprador aceptó pagar. `paymentGate`
+devuelve **por qué** y no un booleano: la cola de pagos lo escribe en la fila
+—"1 proveedor sin confirmar"— para que se sepa a quién llamar, y esconder el
+botón no es la defensa.
 
 > Esta máquina de estados coincide con el flujo Zelle descrito en
 > [`PLAN.md`](../PLAN.md) (Fase 1). La integración automática con suby.fi queda

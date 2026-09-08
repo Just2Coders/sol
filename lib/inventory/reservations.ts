@@ -1,7 +1,7 @@
 import "server-only";
 import { and, eq, inArray, lt, sql } from "drizzle-orm";
-import { db } from "@/lib/db";
-import { products, stockReservations } from "@/lib/db/schema";
+import { db, type Executor, type Tx } from "@/lib/db";
+import { stockReservations } from "@/lib/db/schema";
 import { reservationExpiresAt } from "./holds";
 import { recordMovement, syncStockBalance, type Actor } from "./service";
 import type { ReservationIntent } from "./reservation-plan";
@@ -26,11 +26,18 @@ export type ReserveResult =
   | { ok: false; shortfalls: ReservationShortfall[] };
 
 /**
- * Retiene lo que pide un pedido, o no retiene nada.
+ * Retiene lo que pide una parte del pedido, **dentro de la transacción que lo
+ * crea**.
  *
- * Todo dentro de **una transacción**: si una sola pieza falta se revierte lo ya
- * retenido, porque un pedido a medio reservar es peor que uno que no nace. Es
- * justo lo que `neon-http` no permitía y por lo que el driver cambió.
+ * Recibe el `tx` y no usa `db` porque la orden, sus partes, sus líneas y estas
+ * reservas o entran todas o no entra ninguna: un pedido a medio reservar es peor
+ * que uno que no nace. Es justo lo que `neon-http` no permitía y por lo que el
+ * driver cambió.
+ *
+ * **No revierte por su cuenta**: devuelve qué faltó y deja que quien abrió la
+ * transacción decida. Sería la única capa que no puede decidirlo — a esta altura
+ * ya no se sabe si el pedido tenía más partes ni qué hay que contarle al
+ * comprador.
  *
  * La puerta de la concurrencia es la condición del `UPDATE`, no una lectura
  * previa: entre un `SELECT` que dice "queda uno" y el `UPDATE` que lo aparta cabe
@@ -39,91 +46,60 @@ export type ReserveResult =
  *
  * Las intenciones llegan **ordenadas por `productId`** desde `reservationPlan`,
  * que es lo que evita que dos checkouts simultáneos se bloqueen en orden
- * distinto.
+ * distinto. Y lo vencido tiene que estar ya soltado antes de abrir la
+ * transacción (`releaseExpiredForProducts`), o un carrito abandonado retendría
+ * una unidad hasta que pase el cron — que en el plan Hobby de Vercel es una vez
+ * al día.
  */
-export async function reserveForPart({
-  orderSupplierId,
-  intents,
-  supplierHoldHours,
-  now = new Date(),
-}: {
-  orderSupplierId: string;
-  intents: ReservationIntent[];
-  /** El del proveedor de esta parte; `null` = el default de la plataforma. */
-  supplierHoldHours: number | null;
-  now?: Date;
-}): Promise<ReserveResult> {
+export async function reserveForPart(
+  tx: Tx,
+  {
+    orderSupplierId,
+    intents,
+    supplierHoldHours,
+    now = new Date(),
+  }: {
+    orderSupplierId: string;
+    intents: ReservationIntent[];
+    /** El del proveedor de esta parte; `null` = el default de la plataforma. */
+    supplierHoldHours: number | null;
+    now?: Date;
+  },
+): Promise<ReserveResult> {
   if (intents.length === 0) return { ok: true };
-
-  // Antes de retener, suelta lo que ya venció **de estos productos**.
-  //
-  // Sin esto, la corrección dependería de cada cuánto corre el cron — y en el
-  // plan Hobby de Vercel eso es una vez al día, así que un carrito abandonado
-  // bloquearía una unidad hasta 24 h de más. Con esto, quien intenta comprar
-  // libera él mismo lo caducado y el cron pasa a ser red de seguridad.
-  await releaseExpiredForProducts(
-    intents.map((intent) => intent.productId),
-    now,
-  );
 
   // Absoluto y escrito una vez: cambiar el ajuste del proveedor mañana no mueve
   // esta reserva, igual que el snapshot de precio de `order_items`.
   const expiresAt = reservationExpiresAt(now, supplierHoldHours);
 
-  try {
-    await db.transaction(async (tx) => {
-      for (const intent of intents) {
-        const taken = await tx.execute(sql`
-          update products
-             set reserved = reserved + ${intent.units}
-           where id = ${intent.productId}
-             and stock - reserved >= ${intent.units}
-          returning id
-        `);
+  const shortfalls: ReservationShortfall[] = [];
 
-        // Cero filas = no había. Se revierte todo lo retenido antes.
-        if ((taken.rowCount ?? 0) === 0) tx.rollback();
+  for (const intent of intents) {
+    const taken = await tx.execute(sql`
+      update products
+         set reserved = reserved + ${intent.units}
+       where id = ${intent.productId}
+         and stock - reserved >= ${intent.units}
+      returning id
+    `);
 
-        await tx.insert(stockReservations).values({
-          orderSupplierId,
-          productId: intent.productId,
-          quantity: intent.units,
-          expiresAt,
-        });
-      }
+    // Cero filas = no había. Se anota y se para: seguir retendría mercancía de
+    // un pedido que no va a nacer, y el `rollback` de quien llama la soltaría de
+    // todos modos.
+    if ((taken.rowCount ?? 0) === 0) {
+      shortfalls.push({ productId: intent.productId, requested: intent.units });
+      return { ok: false, shortfalls };
+    }
+
+    await tx.insert(stockReservations).values({
+      orderSupplierId,
+      productId: intent.productId,
+      quantity: intent.units,
+      expiresAt,
     });
-
-    return { ok: true };
-  } catch {
-    // `tx.rollback()` sale por excepción. Volver a mirar qué falta es una
-    // consulta barata y evita arrastrar estado a través del throw — y de paso el
-    // mensaje dice lo que hay **ahora**, no lo que había al empezar.
-    return { ok: false, shortfalls: await missingFor(intents) };
   }
-}
 
-/** Qué intenciones no caben ahora mismo. Para el mensaje, no para decidir. */
-async function missingFor(
-  intents: ReservationIntent[],
-): Promise<ReservationShortfall[]> {
-  const rows = await db
-    .select({
-      id: products.id,
-      available: sql<number>`greatest(${products.stock} - ${products.reserved}, 0)`,
-    })
-    .from(products)
-    .where(
-      inArray(
-        products.id,
-        intents.map((intent) => intent.productId),
-      ),
-    );
-
-  const available = new Map(rows.map((row) => [row.id, Number(row.available)]));
-
-  return intents
-    .filter((intent) => (available.get(intent.productId) ?? 0) < intent.units)
-    .map((intent) => ({ productId: intent.productId, requested: intent.units }));
+  return { ok: true };
 }
 
 /**
@@ -180,9 +156,18 @@ export async function consumeReservations(
  * **No escribe movimiento**: soltar no toca `stock`, solo `reserved`. La
  * mercancía nunca salió del almacén, así que el libro mayor no tiene nada que
  * contar.
+ *
+ * El ejecutor va al final y con `db` por defecto porque esto se usa de las dos
+ * formas: dentro de la transacción que rechaza una parte —donde soltar el stock
+ * y marcar la parte tienen que entrar juntos— y suelto, cuando algo lo cancela
+ * por su cuenta. `reserveForPart`, que solo vale dentro de una transacción, pide
+ * el `Tx` delante y obligatorio.
  */
-export async function releaseReservations(orderSupplierId: string): Promise<number> {
-  const released = await db
+export async function releaseReservations(
+  orderSupplierId: string,
+  executor: Executor = db,
+): Promise<number> {
+  const released = await executor
     .update(stockReservations)
     .set({ status: "RELEASED", resolvedAt: new Date() })
     .where(
@@ -194,7 +179,7 @@ export async function releaseReservations(orderSupplierId: string): Promise<numb
     .returning({ productId: stockReservations.productId });
 
   for (const productId of new Set(released.map((row) => row.productId))) {
-    await syncReservedBalance(productId);
+    await syncReservedBalance(productId, executor);
   }
   return released.length;
 }
@@ -258,8 +243,11 @@ export async function releaseExpiredReservations(now = new Date()): Promise<numb
  * repetirlo arregla en vez de acumular. En SQL literal por la trampa de
  * cualificación de drizzle en un `update` de una sola tabla (ARCHITECTURE §3).
  */
-export async function syncReservedBalance(productId: string): Promise<void> {
-  await db.execute(sql`
+export async function syncReservedBalance(
+  productId: string,
+  executor: Executor = db,
+): Promise<void> {
+  await executor.execute(sql`
     update products p
        set reserved = (
              select coalesce(sum(r.quantity), 0)::int
