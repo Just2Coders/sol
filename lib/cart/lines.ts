@@ -1,4 +1,5 @@
 import type { PurchasableType } from "@/lib/catalog/filters";
+import type { EquipmentScope } from "@/lib/services/enums";
 
 /**
  * El carrito como dato puro: qué es una línea y cómo se suma.
@@ -81,6 +82,40 @@ export function cartSubtotalUsd(lines: CartLine[]): number {
 /** Piezas en el carrito, no líneas: es el número que lleva la burbuja. */
 export function cartCount(lines: CartLine[]): number {
   return lines.reduce((sum, line) => sum + line.quantity, 0);
+}
+
+/**
+ * ¿Trae el carrito el equipo sobre el que este servicio puede trabajar?
+ *
+ * El alcance decide qué cuenta como "su equipo" (ver PLAN.md): un `OWN` solo
+ * trabaja sobre lo que vendió su propio proveedor, un `PLATFORM` acepta lo de
+ * cualquiera de Solaris, y un `ANY` no necesita nada porque también sirve para
+ * lo que el comprador consiguió fuera — es el único que se puede contratar a
+ * ciegas.
+ *
+ * Sale de las propias líneas y no de la base a propósito: es la misma pregunta
+ * que responde la ficha para decidir si enseña el bloque de compra y la que
+ * revalidará el checkout entre grupos (Etapa 6), así que se escribe una vez y
+ * en el módulo puro que los dos pueden importar.
+ *
+ * Solo cuenta el equipo: una línea de servicio no instala a otro servicio.
+ *
+ * _Queda una segunda puerta por abrir:_ con «Mis equipos» (Etapa 9) el equipo
+ * podrá venir además de un pedido pagado anterior, y eso sí habrá que
+ * consultarlo. Esta función seguirá siendo la mitad del carrito.
+ */
+export function cartCoversService(
+  lines: CartLine[],
+  service: { equipmentScope: EquipmentScope; supplierSlug: string },
+): boolean {
+  if (service.equipmentScope === "ANY") return true;
+
+  return lines.some(
+    (line) =>
+      (line.type === "PRODUCT" || line.type === "KIT") &&
+      (service.equipmentScope === "PLATFORM" ||
+        line.supplierSlug === service.supplierSlug),
+  );
 }
 
 /** Lo que entrega un proveedor dentro del pedido: sus líneas y lo que suman. */

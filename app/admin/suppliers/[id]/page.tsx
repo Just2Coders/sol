@@ -40,6 +40,7 @@ export default async function EditSupplierPage({
           logoUrl: supplier.logoUrl,
           notes: supplier.notes,
           payoutInfo: supplier.payoutInfo,
+          reservationHoldHours: supplier.reservationHoldHours,
           active: supplier.active,
           zoneIds: supplier.zones.map((zn) => zn.zoneId),
         }}

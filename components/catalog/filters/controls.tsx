@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/select";
 import {
   DEFAULT_SORT,
+  type CatalogCounts,
   type CatalogFilters,
   type CatalogSort,
   type CatalogType,
@@ -39,7 +40,7 @@ export type CatalogFiltersProps = {
   zones: ZoneFilterGroup[];
   /** Proveedores del ámbito: los que operan en la zona elegida. */
   suppliers: { name: string; slug: string }[];
-  counts: { all: number; KIT: number; PRODUCT: number };
+  counts: CatalogCounts;
 };
 
 // Radix no admite un item con value="", así que "sin filtro" necesita centinela.
@@ -138,10 +139,13 @@ export function Field({
   );
 }
 
+// El orden espeja el "sugerido" del listado: kits, productos y al final la mano
+// de obra, que casi nunca es lo que se venía a buscar.
 const TYPE_OPTIONS: { value: CatalogType | null; label: string }[] = [
   { value: null, label: "Todo" },
   { value: "KIT", label: "Kits" },
   { value: "PRODUCT", label: "Productos" },
+  { value: "SERVICE", label: "Instalación" },
 ];
 
 export function TypeSwitch({
@@ -151,7 +155,7 @@ export function TypeSwitch({
   className,
 }: {
   value: CatalogType | null;
-  counts: { all: number; KIT: number; PRODUCT: number };
+  counts: CatalogCounts;
   onChange: (type: CatalogType | null) => void;
   className?: string;
 }) {

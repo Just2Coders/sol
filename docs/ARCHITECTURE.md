@@ -15,7 +15,7 @@
 |---|---|
 | Framework | Next.js 16 (App Router, React Server Components) + React 19 |
 | Lenguaje | TypeScript en modo `strict` |
-| Base de datos | PostgreSQL en **Neon** (driver serverless HTTP) |
+| Base de datos | PostgreSQL en **Neon** (driver serverless por WebSocket) |
 | ORM | **Drizzle ORM** + `drizzle-kit` para migraciones |
 | Validación | **Zod** v4 |
 | Auth | Sesión propia por **JWT** (`jose`) en cookie httpOnly + `bcryptjs` |
@@ -29,7 +29,8 @@ app/                    Presentación: rutas, páginas (RSC) y Server Actions
   (auth)/               Grupo de rutas de autenticación (login, signup)
   actions/              Server Actions ("use server") — punto de entrada de mutaciones
   admin/                Panel de administración (rol ADMIN): zones, suppliers,
-                        products, kits, services, service-categories
+                        supplier-leads, products, kits, services,
+                        service-categories
   account/              Área del cliente autenticado
   catalog/              Catálogo público: listado y fichas de /products/[slug],
                         /kits/[slug] y /services/[slug]
@@ -59,6 +60,27 @@ lib/                    Lógica de servidor reutilizable (NO específica de una 
     filters.ts          Los filtros del catálogo tal como viven en la URL (puro)
     photos.ts           La columna de fotos de una ficha y sus anclas (puro)
     queries.ts          Lecturas del catálogo público (solo activo, por zona)
+  inventory/
+    availability.ts     Qué se puede vender: stock − reserved, y la derivada
+                        de un kit a partir de sus piezas (puro)
+    holds.ts            Los relojes de una reserva: cuánto retiene el
+                        proveedor y de ahí el resto (puro)
+    restocks.ts         La reposición prometida y su ventana (puro)
+    adjustments.ts      Qué recuento y qué ventana son válidos (puro)
+    service.ts          El ÚNICO sitio que escribe stock: movimientos,
+                        reposiciones y el saldo recalculado desde el libro
+    reservation-plan.ts De un carrito a qué unidades retener, con los kits
+                        expandidos a sus piezas (puro)
+    reservations.ts     Retener, consumir y soltar; la sentencia condicional
+                        que impide vender dos veces la última unidad
+    sweep.ts            Lo que hace el cron: soltar vencidas, caducar
+                        anuncios y promover precios
+    queries.ts          El inventario de un producto para el panel
+  pricing/
+    effective.ts        El precio efectivo, el programado y qué hay que
+                        promover (puro)
+    service.ts          El ÚNICO sitio que escribe precio: abre la línea de
+                        tiempo, anota un cambio y promueve los vencidos
   products/queries.ts   Lecturas de productos (panel admin)
   kits/queries.ts       Lecturas de kits con sus componentes (panel admin)
   services/
@@ -71,6 +93,8 @@ lib/                    Lógica de servidor reutilizable (NO específica de una 
   zones/queries.ts      Lecturas de zonas (jerarquía estado → ciudad)
   zones/preference.ts   Cookie con la zona que eligió el visitante
   suppliers/queries.ts  Lecturas de proveedores (con zonas de cobertura)
+  supplier-leads/queries.ts
+                        Las solicitudes de alta que deja /sell, para el admin
   session.ts            Emisión/lectura/borrado de la cookie de sesión JWT
   dal.ts                Data Access Layer: verificación de sesión + lectura de usuario
   utils.ts              Helpers compartidos (cn, slugify, safeInternalPath)
@@ -121,9 +145,19 @@ módulo en vez de una query con banderas:
   todo, activo o no.
 - `lib/catalog/queries.ts` sirve al **catálogo público**: solo items activos de
   proveedores activos, filtrados por la zona donde el visitante instala, y con
-  kits y productos unificados en un mismo tipo (`CatalogItem`) para que la
-  grilla no sepa de qué tabla viene cada tarjeta. Nunca expone datos internos
-  del proveedor (`payoutInfo`, teléfono, notas).
+  kits, productos y servicios unificados en un mismo tipo (`CatalogItem`) para
+  que la grilla no sepa de qué tabla viene cada tarjeta. Nunca expone datos
+  internos del proveedor (`payoutInfo`, teléfono, notas).
+
+  El listado son **tres** ramas de un `UNION ALL` con la misma forma de fila, y
+  cada columna que solo tiene una rama viaja neutra en las otras (`null` para la
+  categoría y la unidad de obra fuera de un servicio). Ordenar, cortar y paginar
+  lo hace Postgres sobre la unión, no Node.
+
+  De los servicios **solo se listan los `ANY`**, y es la única diferencia
+  operativa entre `ANY` y `PLATFORM`: los dos aceptan equipo ajeno, pero solo el
+  primero se contrata sin traerlo. Anunciar en la grilla uno que necesita su
+  equipo sería mandar a la gente a una ficha que no le va a vender nada.
 
 ### La ficha son dos columnas y tres regiones que no se empujan
 
@@ -173,6 +207,15 @@ pedido cae y a quién se le liquida.
 Ojo con `extras` de la query relacional de drizzle: reescribe las referencias de
 columna apuntándolas a la tabla exterior, así que una subconsulta correlacionada
 contra otras tablas **no** se puede escribir ahí.
+
+Y ojo con la trampa hermana en `db.select()`: cuando el `FROM` tiene **una sola
+tabla**, drizzle renderiza las columnas sin cualificar. Un `sql` con
+`exists (select 1 from ${products} where ${products.supplierId} = ${suppliers.id})`
+sale como `where "supplier_id" = "id"`, y dentro de la subconsulta las dos
+resuelven contra `products`. No es un error de SQL —la consulta corre— sino una
+respuesta constante y equivocada, que es peor. Cuando haga falta correlacionar,
+o se escriben los identificadores a mano, o se parte en consultas separadas y se
+cruza en memoria (lo que hace `getSupplierOptions` con `hasInstallables`).
 
 Los filtros del catálogo viven en la **URL**, no en estado de cliente
 (`lib/catalog/filters.ts` los traduce en ambos sentidos): así una búsqueda se
@@ -242,6 +285,13 @@ Definido en [`lib/db/schema.ts`](../lib/db/schema.ts). Entidades principales:
   **installation_offers** dice qué servicio se ofrece junto a qué producto o kit,
   y cruza de proveedor cuando el servicio no es `OWN`. Sin filas ahí, un servicio
   `ANY` se sigue vendiendo solo; los otros dos solo existen pegados a su equipo.
+  Se administran en la ficha del servicio (`/admin/services/[id]`), en una sección
+  **aparte** del formulario y no dentro como las zonas de un proveedor: cerrar un
+  servicio a `OWN` con ofertas ajenas se rechaza con un «quita esas ofertas
+  primero», y si las casillas vivieran en el mismo formulario el select de alcance
+  las escondería justo cuando hay que quitarlas. La regla del alcance se valida en
+  las dos puntas — al escribir (`setInstallationOffers`) y al leer
+  (`getInstallationsFor`).
 - **orders** — lo que el cliente compró y pagó: un número, un total y **un solo
   pago**, aunque lleve cosas de varios proveedores. No tiene `supplierId`.
 - **order_suppliers** — la parte del pedido que le toca a cada proveedor, con su
@@ -253,6 +303,24 @@ Definido en [`lib/db/schema.ts`](../lib/db/schema.ts). Entidades principales:
   compra; cuelgan de `order_suppliers` (no de `orders`), así que la línea sabe
   quién la entrega sin repetir la columna. `itemId` es una FK "blanda" a
   `products.id`, `kits.id` o `services.id` según `itemType`.
+- **stock_movements** — el libro mayor: solo se añade, y explica cada cambio del
+  saldo con su motivo y quién lo hizo. `products.stock` es el saldo y esto el
+  porqué, así que el histórico sale gratis. **Nada más escribe stock.**
+- **stock_reservations** — lo comprometido por un pedido sin cobrar, con
+  vencimiento. Cuelga de `order_suppliers`, así que cancelar la parte de un
+  proveedor devuelve solo su stock. **Vendible = `stock - reserved`.**
+- **restocks** — la reposición prometida. No toca el saldo y lleva **ventana**
+  (`eta_from`/`eta_to`) en vez de fecha: la incertidumbre es estructural, no una
+  nota al pie. Al llegar se resuelve **y** se escribe un `RESTOCK` con la
+  cantidad real — la distancia entre lo anunciado y lo llegado dice qué proveedor
+  cumple.
+- **stock_alerts** — "avísame cuando vuelva", que es lo que se ofrece en lugar de
+  la pre-orden: captura la demanda sin tocar dinero.
+- **price_schedules** — el precio como línea de tiempo, para productos, kits y
+  servicios. Filas pasadas: histórico; futuras: programado; el efectivo es el de
+  mayor `starts_at <= now()`. `price_usd` de cada tabla es una **caché** de ese
+  efectivo, y existe solo porque el listado ordena y filtra por rango sobre esa
+  columna indexada.
 - **payments** — pago por **Zelle** (MVP) o Suby.fi (futuro), con su propio ciclo
   de verificación manual por el admin. Uno por **orden**, no por proveedor:
   partir el Zelle sería peor para quien compra y peor para conciliar.
@@ -263,9 +331,12 @@ Definido en [`lib/db/schema.ts`](../lib/db/schema.ts). Entidades principales:
 > [`PLAN.md`](../PLAN.md) y depende de que existan pedidos pagados, así que se
 > diseña cuando los haya.
 >
-> Y falta el otro lado del alcance: hoy nada impide contratar suelto un servicio
-> `OWN` o `PLATFORM` desde su ficha. La regla está decidida (Etapa 5) pero vive
-> en pantallas que aún no existen — el listado del catálogo y el checkout.
+> El otro lado del alcance ya está puesto en el catálogo: un servicio `OWN` o
+> `PLATFORM` no se lista suelto, y su ficha solo enseña el bloque de compra si el
+> carrito trae el equipo que le toca (`cartCoversService`, en el módulo puro para
+> que el checkout revalide con la misma función). Lo que **falta** es la segunda
+> puerta: con «Mis equipos» (Etapa 9) el equipo podrá venir además de un pedido
+> pagado anterior, y eso sí hay que consultarlo.
 
 ### Convenciones del modelo
 
@@ -349,7 +420,124 @@ npm run db:migrate   # aplicar migraciones
 npm run db:push      # empujar el schema directo (solo prototipado local)
 npm run db:studio    # UI de Drizzle para inspeccionar la BD
 npm run db:seed      # cargar datos iniciales
+npm run check:inventory  # las invariantes del inventario, contra la BD apuntada
 ```
+
+### El driver va por WebSocket porque hacen falta transacciones
+
+`lib/db/index.ts` usa `neon-serverless` con un `Pool`, no `neon-http`. La razón
+es una sola: el driver HTTP **no soporta transacciones** —lo lanza
+explícitamente— y crear un pedido son varias escrituras que o entran todas o no
+entra ninguna: la orden, sus partes, sus líneas y la reserva de cada producto.
+
+Un cliente y no dos. La regla "HTTP para leer, Pool para escribir" se rompe la
+primera vez que alguien escribe desde el sitio equivocado, y el fallo sería
+silencioso. El Pool vive a nivel de módulo: en Fluid Compute la instancia se
+reutiliza, así que abrirlo se paga una vez. Un script suelto que importe `db`
+tiene que terminar con `process.exit`, o se queda esperando al socket.
+
+`DATABASE_URL` apunta al endpoint `-pooler` de Neon (PgBouncer en modo
+transacción). Verificado que soporta `BEGIN/COMMIT` con rollback real y
+sentencias parametrizadas; si algún día aparecen errores de *prepared statement*,
+la salida es el endpoint directo.
+
+### Retener no es vender
+
+Entre que se crea un pedido y se confirma el Zelle pasan días. Si el stock bajara
+al confirmar, dos personas comprarían el último panel; si bajara al hacer
+checkout, un carrito abandonado mataría esa unidad para siempre. Por eso se
+**retiene con vencimiento**: sube `products.reserved`, no baja `stock`, y lo
+vendible es la resta.
+
+La puerta de la concurrencia es la condición del `UPDATE`, no una lectura previa:
+
+```sql
+update products set reserved = reserved + $n
+ where id = $id and stock - reserved >= $n
+```
+
+Entre un `SELECT` que dice "queda uno" y el `UPDATE` que lo aparta cabe otra
+petición entera. Así la comprobación y la escritura son el mismo acto, y quien
+llega segundo se lleva cero filas. Está verificado con dos reservas simultáneas
+de la última unidad: gana exactamente una.
+
+Las intenciones se piden **ordenadas por `productId`** (`reservationPlan`). No es
+cosmético: dos checkouts que retuvieran A y B en órdenes distintos dentro de
+sendas transacciones se bloquearían mutuamente.
+
+### Las reglas del inventario viven en funciones puras
+
+`lib/inventory/` y `lib/pricing/` no importan `db` ni llevan `server-only`: son
+las reglas del dominio, no su lectura. Lo hacen a propósito, y por dos motivos
+que se refuerzan.
+
+El primero es que **la misma pregunta se hace desde tres sitios**. "¿Cuánto queda
+de esto?" la responden el listado, la ficha y el checkout; "¿qué precio rige?",
+la tarjeta y la Action que cobra. Escrita como función pura se escribe una vez y
+los tres la importan — igual que ya pasaba con `lib/catalog/filters.ts` y
+`lib/cart/lines.ts`.
+
+El segundo es que **son las que se pueden equivocar**, y en puro cuestan un test
+por caso: el día exacto en que vence una ventana, el kit sin piezas, las reservas
+que superan al stock. Lo que queda alrededor —leer, escribir, revalidar— es
+plomería, y se mantiene fina para que no haya nada que probar en ella.
+
+### Las dos cachés del inventario, y cómo se comprueban
+
+`products.stock` y `price_usd` duplican información que vive en otra tabla
+(`stock_movements` y `price_schedules`). Es doble contabilidad y se acepta **por
+rendimiento de lectura**, no por comodidad: la tarjeta del catálogo necesita las
+dos por fila, y resolverlas con un lateral join sería pagar la temporalidad en la
+consulta más caliente del sitio.
+
+Lo que la hace segura es que descuadrar es **detectable**. Tres queries, una por
+invariante, en `npm run check:inventory`:
+
+```
+products.stock    = coalesce(sum(stock_movements.delta), 0)
+products.reserved = coalesce(sum(quantity de las reservas HELD), 0)
+price_usd         = el price_schedules de mayor starts_at <= now()
+```
+
+**Un agotado no es un callejón.** Cuando no queda nada, el bloque de compra de la
+ficha deja el sitio a lo único útil que queda decir: si vuelve y si te avisamos
+(`RestockNotice`, por el mismo `purchase` que ya usaba la ficha de un servicio).
+Se dice una de dos cosas y nunca se inventa la tercera — una ventana anunciada,
+o «no sabemos». «Vuelve pronto» sin que nadie lo haya prometido es lo que hace
+que la siguiente promesa no valga.
+
+Lo que **no** se hace es venderlo igual: con pago manual, cobrar por adelantado
+contra una fecha aproximada es prometer lo que no se controla. En su lugar está
+`stock_alerts`, que captura la demanda sin tocar dinero y le dice al proveedor
+cuánto pedir. Pide sesión porque el aviso va a una persona. Un **kit** no lo
+lleva —`stock_alerts` es por producto—: su ficha dice cuándo vuelve, heredando la
+ventana **más tardía** de las piezas que le faltan, porque llega cuando llegue la
+última.
+
+**La misma regla, escrita dos veces y a propósito.** Qué se puede vender está en
+`lib/inventory/availability.ts` (puro, con tests) y también en SQL dentro de
+`lib/catalog/queries.ts`. No es duplicación por descuido: las **fichas** cargan
+las piezas de todos modos y usan la función; el **listado** no puede —traerse los
+componentes de cada kit a Node para marcar una tarjeta sería una consulta por
+fila—, así que allí la derivada la calcula Postgres. Si una cambia, cambian las
+dos, y hay un ejercicio contra la base de dev que comprueba que coinciden.
+
+**El saldo se recalcula, no se incrementa.** `lib/inventory/service.ts` escribe
+la fila del libro y después pone `products.stock` igual a la suma de su libro —
+no `stock + delta`. La diferencia es lo que hace que un fallo a medias sea
+inofensivo: `stock = stock + delta` acumula el error si se repite, y `neon-http`
+no da transacciones para impedirlo; recomputar converge siempre a la verdad, así
+que la reparación es volver a ejecutarlo (`repairAllBalances`).
+
+Por eso también **el formulario de producto ya no edita las existencias**: al
+crear se pregunta el saldo de apertura —que entra como movimiento `OPENING`— y a
+partir de ahí solo se mueven por recuento, merma o reposición. Guardar la ficha
+pisaba la columna y rompía la invariante en el acto.
+
+Se cumplen desde la migración `0007`, que además del schema trae el **backfill**
+—un `OPENING` por producto y una fila de precio por item—; sin él las tablas
+nuevas nacerían mintiendo sobre lo que ya existía. El seed hace lo mismo al
+final, para que una base recién sembrada también las cumpla.
 
 Variables de entorno (ver [`.env.example`](../.env.example)): `DATABASE_URL`
 (Neon) y `SESSION_SECRET`.

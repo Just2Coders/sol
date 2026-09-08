@@ -91,10 +91,16 @@ export function CatalogPurchaseBlock({
 
         {/* Crece hasta llenar el renglón, con un mínimo por debajo del cual se
             baja a su propia línea: en la columna estrecha de un portátil el
-            texto del botón no se parte nunca. */}
+            texto del botón no se parte nunca.
+
+            Va en `primary-loud` y no en el `primary` de trabajo del resto del
+            catálogo: es la única acción que de verdad decide un pedido, y ya
+            es el acento que lleva el CTA de la card ("Ver este kit →") y los
+            filtros activos — el botón de comprar no podía quedarse más quieto
+            que ellos. */}
         <Button
           size="lg"
-          className="min-w-44 flex-1"
+          className="bg-primary-loud text-primary-loud-foreground hover:bg-primary-loud-hover min-w-44 flex-1"
           disabled={blocked}
           onClick={handleAdd}
         >

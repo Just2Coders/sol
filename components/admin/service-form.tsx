@@ -39,6 +39,8 @@ export type ServiceSupplierOption = {
   name: string;
   /** Con qué alcance nacen sus servicios. Solo prefija este formulario. */
   defaultEquipmentScope: EquipmentScope;
+  /** ¿Vende productos o kits? Es lo que decide si un `OWN` suyo tiene salida. */
+  hasInstallables: boolean;
 };
 
 export type ServiceCategoryOption = { id: string; name: string };
@@ -100,11 +102,22 @@ export function ServiceForm({
   // tocar otro campo sería cambiar una decisión ya tomada sin avisar.
   const [scope, setScope] = useState<EquipmentScope>(service?.equipmentScope ?? "OWN");
 
-  function handleSupplierChange(supplierId: string) {
+  // Quién es el proveedor elegido se sigue aquí porque de él depende el aviso de
+  // abajo, no solo el valor que se envía.
+  const [supplierId, setSupplierId] = useState(service?.supplierId ?? "");
+
+  function handleSupplierChange(value: string) {
+    setSupplierId(value);
     if (service) return;
-    const supplier = suppliers.find((s) => s.id === supplierId);
+    const supplier = suppliers.find((s) => s.id === value);
     if (supplier) setScope(supplier.defaultEquipmentScope);
   }
+
+  // Un proveedor sin productos ni kits es un **instalador puro**: un servicio
+  // `OWN` suyo no tendría a qué pegarse y no se podría vender nunca. No se
+  // prohíbe —puede estar a punto de cargar su catálogo—, se avisa.
+  const supplier = suppliers.find((s) => s.id === supplierId);
+  const ownWithoutCatalog = scope === "OWN" && supplier != null && !supplier.hasInstallables;
 
   return (
     <form action={action} className="grid gap-6">
@@ -242,6 +255,14 @@ export function ServiceForm({
               </SelectContent>
             </Select>
             <p className="text-sm text-muted-foreground">{SCOPE_HELP[scope]}</p>
+            {ownWithoutCatalog && (
+              <p className="bg-warning-bg text-warning border-warning-border rounded-md border p-3 text-sm">
+                {supplier.name} no tiene productos ni kits todavía, así que un
+                servicio que solo trabaje sobre equipo propio no se podrá vender:
+                no hay nada a lo que pegarlo. Cárgale catálogo, o ábrele el
+                alcance.
+              </p>
+            )}
             <FieldError state={state} field="equipmentScope" />
           </div>
 

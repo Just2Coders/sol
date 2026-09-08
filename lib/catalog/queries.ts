@@ -28,7 +28,20 @@ import {
 } from "@/lib/db/schema";
 import { sumItemsUsd, type KitItemDetail } from "@/lib/kits/queries";
 import {
+  availableUnits,
+  kitAvailableUnits,
+  missingComponents,
+} from "@/lib/inventory/availability";
+import {
+  isoDay,
+  kitRestockWindow,
+  soonestRestock,
+  type RestockWindow,
+} from "@/lib/inventory/restocks";
+import type { EquipmentScope } from "@/lib/services/enums";
+import {
   CATALOG_PAGE_SIZE,
+  type CatalogCounts,
   type CatalogFilters,
   type CatalogSort,
   type CatalogType,
@@ -77,9 +90,9 @@ export type CatalogResult = {
   items: CatalogItem[];
   /**
    * Conteos del ámbito (zona + proveedor + precio) **ignorando** el filtro de
-   * tipo: son los números que muestra el selector Todo · Kits · Productos.
+   * tipo: son los números del selector Todo · Kits · Productos · Instalación.
    */
-  counts: { all: number; KIT: number; PRODUCT: number };
+  counts: CatalogCounts;
   /** Proveedores que operan en la zona elegida — alimenta el selector. */
   suppliers: CatalogSupplier[];
   /** La zona resuelta, o `null` si el catálogo se ve sin filtro de zona. */
@@ -192,7 +205,7 @@ function scopeConditions(
 // ─── Listado ─────────────────────────────────────────────────────────────────
 
 function priceConditions(
-  column: typeof products.priceUsd | typeof kits.priceUsd,
+  column: typeof products.priceUsd | typeof kits.priceUsd | typeof services.priceUsd,
   filters: CatalogFilters,
 ): SQL[] {
   const conditions: SQL[] = [];
@@ -215,17 +228,29 @@ function kitSummary(components: number, pieces: number): string | null {
   return `${left} · ${pieces} ${pieces === 1 ? "pieza" : "piezas"}`;
 }
 
+// "Paneles · por panel": de qué trabajo es y cómo se cobra, que es lo que
+// distingue a una instalación de otra en una grilla donde todo lo demás es
+// equipo.
+function serviceSummary(
+  categoryName: string | null,
+  unitLabel: string | null,
+): string | null {
+  const how = unitLabel ? `por ${unitLabel}` : "precio cerrado";
+  return categoryName ? `${categoryName} · ${how}` : how;
+}
+
 /**
- * La fila que devuelven las dos ramas del listado.
+ * La fila que devuelven las tres ramas del listado.
  *
- * Kits y productos se leen con la **misma** forma para poder unirlos en SQL
- * (`UNION ALL`) y que sea Postgres quien ordene, corte y pagine. Las columnas
- * que solo tiene un lado viajan neutras en el otro: un kit nunca tiene `specs`
- * y un producto nunca tiene piezas.
+ * Kits, productos y servicios se leen con la **misma** forma para poder unirlos
+ * en SQL (`UNION ALL`) y que sea Postgres quien ordene, corte y pagine. Las
+ * columnas que solo tiene una rama viajan neutras en las otras: un kit nunca
+ * tiene `specs`, un producto nunca tiene piezas y solo un servicio tiene unidad
+ * de obra.
  */
 type CatalogRow = {
   type: CatalogType;
-  /** 0 = kit, 1 = producto. Es la primera clave del orden "sugerido". */
+  /** 0 = kit, 1 = producto, 2 = servicio. Primera clave del orden "sugerido". */
   rank: number;
   id: string;
   slug: string;
@@ -238,7 +263,15 @@ type CatalogRow = {
   specs: Record<string, string>;
   componentCount: number;
   pieceCount: number;
-  stock: number;
+  /**
+   * Unidades que se pueden vender ahora mismo. En un producto es
+   * `stock - reserved`; en un kit, la derivada de sus piezas; en un servicio,
+   * siempre 1 — la mano de obra no se agota en un almacén.
+   */
+  available: number;
+  /** Solo servicios: de qué trabajo es y cómo se cobra. `null` en el resto. */
+  categoryName: string | null;
+  unitLabel: string | null;
 };
 
 /**
@@ -270,8 +303,24 @@ function kitQuery(filters: CatalogFilters, zone: ResolvedZone | null) {
       pieceCount: sql<number>`(select coalesce(sum(${kitItems.quantity}), 0)::int from ${kitItems} where ${kitItems.kitId} = ${kits.id})`.as(
         "piece_count",
       ),
-      // Un kit nunca se marca sin stock; la columna existe para cuadrar la unión.
-      stock: sql<number>`1`.as("stock"),
+      /**
+       * Un kit no tiene existencias propias: manda su pieza más escasa, contando
+       * ya lo comprometido. Es `kitAvailableUnits` de `lib/inventory` escrito en
+       * SQL — tiene que ser Postgres quien lo calcule, porque de esta columna
+       * depende marcar agotada la tarjeta sin traerse las piezas a Node.
+       *
+       * `min` sobre un conjunto vacío da NULL: un kit sin piezas no se puede
+       * armar, así que cae a 0 y no a "infinitas". Las piezas con cantidad 0 se
+       * excluyen — no aportan escasez y dividir por cero no significa nada.
+       */
+      available:
+        sql<number>`(select coalesce(min(floor((p.stock - p.reserved) / ${kitItems.quantity})), 0)::int
+                       from ${kitItems} join products p on p.id = ${kitItems.productId}
+                      where ${kitItems.kitId} = ${kits.id} and ${kitItems.quantity} > 0)`.as(
+          "available",
+        ),
+      categoryName: sql<string | null>`null`.as("category_name"),
+      unitLabel: sql<string | null>`null`.as("unit_label"),
     })
     .from(kits)
     .innerJoin(suppliers, eq(suppliers.id, kits.supplierId))
@@ -299,7 +348,12 @@ function productQuery(filters: CatalogFilters, zone: ResolvedZone | null) {
       specs: products.specs,
       componentCount: sql<number>`0`.as("component_count"),
       pieceCount: sql<number>`0`.as("piece_count"),
-      stock: products.stock,
+      // Lo comprometido por un pedido sin cobrar no está disponible para nadie más.
+      available: sql<number>`greatest(${products.stock} - ${products.reserved}, 0)`.as(
+        "available",
+      ),
+      categoryName: sql<string | null>`null`.as("category_name"),
+      unitLabel: sql<string | null>`null`.as("unit_label"),
     })
     .from(products)
     .innerJoin(suppliers, eq(suppliers.id, products.supplierId))
@@ -308,6 +362,52 @@ function productQuery(filters: CatalogFilters, zone: ResolvedZone | null) {
         eq(products.active, true),
         ...scopeConditions(zone, filters.supplier),
         ...priceConditions(products.priceUsd, filters),
+      ),
+    );
+}
+
+/**
+ * La tercera rama: la instalación que se contrata sola.
+ *
+ * **Solo entran los `ANY`**, y es la única diferencia real entre `ANY` y
+ * `PLATFORM`: los dos aceptan equipo ajeno, pero solo el primero se puede
+ * contratar sin que la plataforma sepa sobre qué equipo va. Anunciar en la
+ * grilla un servicio que necesita traer su equipo sería mandar a la gente a una
+ * ficha que no le va a vender nada — la misma regla que aplica
+ * `ServicePurchaseBlock`, aquí un paso antes.
+ *
+ * La categoría se une porque es lo que distingue a una instalación de otra en
+ * una tarjeta donde todo lo demás es equipo; es un join por FK indexada.
+ */
+function serviceQuery(filters: CatalogFilters, zone: ResolvedZone | null) {
+  return db
+    .select({
+      type: sql<CatalogType>`'SERVICE'`.as("type"),
+      rank: sql<number>`2`.as("rank"),
+      id: services.id,
+      slug: services.slug,
+      name: services.name,
+      sortName: sql<string>`lower(${services.name})`.as("sort_name"),
+      priceUsd: services.priceUsd,
+      image: sql<string | null>`${services.images}[1]`.as("image"),
+      supplierName: sql<string>`${suppliers.name}`.as("supplier_name"),
+      specs: sql<Record<string, string>>`'{}'::jsonb`.as("specs"),
+      componentCount: sql<number>`0`.as("component_count"),
+      pieceCount: sql<number>`0`.as("piece_count"),
+      // La mano de obra no se agota en un almacén.
+      available: sql<number>`1`.as("available"),
+      categoryName: sql<string | null>`${serviceCategories.name}`.as("category_name"),
+      unitLabel: services.unitLabel,
+    })
+    .from(services)
+    .innerJoin(suppliers, eq(suppliers.id, services.supplierId))
+    .innerJoin(serviceCategories, eq(serviceCategories.id, services.categoryId))
+    .where(
+      and(
+        eq(services.active, true),
+        eq(services.equipmentScope, "ANY"),
+        ...scopeConditions(zone, filters.supplier),
+        ...priceConditions(services.priceUsd, filters),
       ),
     );
 }
@@ -327,8 +427,9 @@ function orderClauses(sort: CatalogSort): SQL[] {
       return [sql`price_usd asc`, sql`sort_name asc`];
     case "price-desc":
       return [sql`price_usd desc`, sql`sort_name asc`];
-    // Sugerido: los kits primero — es lo que la casa compra — y dentro de cada
-    // grupo, del más barato al más caro.
+    // Sugerido: los kits primero —es lo que la casa compra—, luego los productos
+    // y al final la mano de obra, que casi nunca es lo que se venía a buscar.
+    // Dentro de cada grupo, del más barato al más caro.
     case "suggested":
       return [sql`rank asc`, sql`price_usd asc`, sql`sort_name asc`];
   }
@@ -362,7 +463,18 @@ async function listItems(
       .offset(offset);
   }
 
-  return unionAll(kitQuery(filters, zone), productQuery(filters, zone))
+  if (filters.type === "SERVICE") {
+    return serviceQuery(filters, zone)
+      .orderBy(...order)
+      .limit(CATALOG_PAGE_SIZE)
+      .offset(offset);
+  }
+
+  return unionAll(
+    kitQuery(filters, zone),
+    productQuery(filters, zone),
+    serviceQuery(filters, zone),
+  )
     .orderBy(...order)
     .limit(CATALOG_PAGE_SIZE)
     .offset(offset);
@@ -405,6 +517,25 @@ async function countProducts(
   return row?.n ?? 0;
 }
 
+async function countServices(
+  filters: CatalogFilters,
+  zone: ResolvedZone | null,
+): Promise<number> {
+  const [row] = await db
+    .select({ n: count() })
+    .from(services)
+    .innerJoin(suppliers, eq(suppliers.id, services.supplierId))
+    .where(
+      and(
+        eq(services.active, true),
+        eq(services.equipmentScope, "ANY"),
+        ...scopeConditions(zone, filters.supplier),
+        ...priceConditions(services.priceUsd, filters),
+      ),
+    );
+  return row?.n ?? 0;
+}
+
 function toItem(row: CatalogRow): CatalogItem {
   return {
     type: row.type,
@@ -417,8 +548,13 @@ function toItem(row: CatalogRow): CatalogItem {
     summary:
       row.type === "KIT"
         ? kitSummary(row.componentCount, row.pieceCount)
-        : specsSummary(row.specs),
-    outOfStock: row.type === "PRODUCT" && row.stock === 0,
+        : row.type === "SERVICE"
+          ? serviceSummary(row.categoryName, row.unitLabel)
+          : specsSummary(row.specs),
+    // Ahora también un kit se agota: si a una de sus piezas no le quedan
+    // unidades, el kit no se puede armar y venderlo sería prometer una entrega
+    // imposible. Un servicio nunca — la mano de obra no vive en un almacén.
+    outOfStock: row.type !== "SERVICE" && row.available === 0,
   };
 }
 
@@ -437,7 +573,7 @@ export async function getCatalog(
   const zone = filters.zone ? await resolveZone(filters.zone) : null;
   const empty: CatalogResult = {
     items: [],
-    counts: { all: 0, KIT: 0, PRODUCT: 0 },
+    counts: { all: 0, KIT: 0, PRODUCT: 0, SERVICE: 0 },
     suppliers: [],
     zone: zone && { slug: zone.slug, name: zone.name },
     unknownZone: filters.zone !== null && zone === null,
@@ -446,17 +582,19 @@ export async function getCatalog(
   };
   if (empty.unknownZone) return empty;
 
-  const [scope, kitCount, productCount, rows] = await Promise.all([
+  const [scope, kitCount, productCount, serviceCount, rows] = await Promise.all([
     getSuppliersInScope(zone),
     countKits(filters, zone),
     countProducts(filters, zone),
+    countServices(filters, zone),
     listItems(filters, zone),
   ]);
 
-  const counts = {
-    all: kitCount + productCount,
+  const counts: CatalogCounts = {
+    all: kitCount + productCount + serviceCount,
     KIT: kitCount,
     PRODUCT: productCount,
+    SERVICE: serviceCount,
   };
   const total = filters.type ? counts[filters.type] : counts.all;
 
@@ -590,12 +728,27 @@ export type CatalogProduct = {
   description: string | null;
   specs: Record<string, string>;
   priceUsd: number;
-  stock: number;
+  /** `stock - reserved`: lo que de verdad se puede pedir, no lo que hay. */
+  available: number;
+  /**
+   * Cuándo vuelve, si es que se ha anunciado. `null` significa **no sabemos**,
+   * que no es lo mismo que "pronto": confundirlas es lo que erosiona la
+   * confianza, así que la ficha dice una cosa o la otra pero nunca inventa.
+   */
+  restock: RestockNotice | null;
   images: string[];
   supplier: CatalogItemSupplier;
   /** Instalaciones que este producto ofrece; vacío si no hay ninguna. */
   installations: CatalogInstallation[];
 };
+
+/** La ventana de una reposición viva, ya resuelta a lo que la ficha enseña. */
+export type RestockNotice = { etaFrom: string; etaTo: string };
+
+/** La ventana que sobrevive, sin el resto de la fila. */
+function noticeFrom(restock: RestockWindow | null): RestockNotice | null {
+  return restock && { etaFrom: restock.etaFrom, etaTo: restock.etaTo };
+}
 
 export type CatalogKitItem = KitItemDetail & {
   productSlug: string;
@@ -618,6 +771,17 @@ export type CatalogKit = {
   /** Diferencia a favor del kit; 0 si comprarlo suelto sale igual o mejor. */
   savingsUsd: number;
   supplier: CatalogItemSupplier;
+  /**
+   * Cuántos kits se pueden armar con lo que hay. Derivada de sus piezas: manda
+   * la más escasa, contando ya lo comprometido por pedidos sin cobrar.
+   */
+  available: number;
+  /**
+   * Cuándo vuelve el kit: la ventana **más tardía** de las piezas que le faltan,
+   * porque llega cuando llegue la última. `null` si a alguna no le espera nada —
+   * entonces el kit no promete.
+   */
+  restock: RestockNotice | null;
   /** Instalaciones que este kit ofrece; vacío si no hay ninguna. */
   installations: CatalogInstallation[];
 };
@@ -631,6 +795,12 @@ export type CatalogService = {
   priceUsd: number;
   pricing: ServicePricing;
   unitLabel: string | null;
+  /**
+   * Sobre qué equipo trabaja. La ficha lo necesita para decidir si puede
+   * venderse a ciegas: solo un `ANY` se contrata sin traer nada, los otros dos
+   * tienen que llegar con su equipo (`cartCoversService`).
+   */
+  equipmentScope: EquipmentScope;
   images: string[];
   categoryName: string;
   supplier: CatalogItemSupplier;
@@ -668,15 +838,34 @@ export const getCatalogProduct = cache(async function getCatalogProduct(
   const [row, installations] = await Promise.all([
     db.query.products.findFirst({
       where: and(eq(products.slug, slug), eq(products.active, true)),
-      with: { supplier: supplierWith },
+      with: {
+        supplier: supplierWith,
+        // Las reposiciones vivas se filtran en memoria y no en SQL: son pocas
+        // por producto, y la regla de cuál vale ya está escrita y probada en
+        // `lib/inventory/restocks.ts`. Repetirla en un `where` sería tenerla
+        // en dos sitios que pueden divergir.
+        restocks: {
+          columns: { status: true, etaFrom: true, etaTo: true },
+        },
+      },
     }),
     getInstallationsFor("PRODUCT", slug),
   ]);
   // Un producto de un proveedor dado de baja no se ofrece.
   if (!row || !row.supplier.active) return null;
 
-  const { supplier, ...product } = row;
-  return { ...product, installations, supplier: toCatalogSupplier(supplier) };
+  const { supplier, restocks: announced, ...product } = row;
+  const today = isoDay(new Date());
+  return {
+    ...product,
+    restock: noticeFrom(soonestRestock(announced, today)),
+    // Aquí se puede usar la función pura: la ficha ya trae la fila entera. El
+    // listado no —tendría que traerse las piezas de cada kit a Node—, así que
+    // allí la misma regla va escrita en SQL.
+    available: availableUnits(product),
+    installations,
+    supplier: toCatalogSupplier(supplier),
+  };
 });
 
 export const getCatalogKit = cache(async function getCatalogKit(
@@ -696,6 +885,15 @@ export const getCatalogKit = cache(async function getCatalogKit(
                 priceUsd: true,
                 active: true,
                 images: true,
+                // Para la derivada: un kit se arma con lo que quede de sus
+                // piezas, no con lo que figure en el almacén.
+                stock: true,
+                reserved: true,
+              },
+              with: {
+                restocks: {
+                  columns: { status: true, etaFrom: true, etaTo: true },
+                },
               },
             },
           },
@@ -719,9 +917,23 @@ export const getCatalogKit = cache(async function getCatalogKit(
     }))
     .sort((a, b) => collator.compare(a.productName, b.productName));
 
+  // Lo que el kit necesita y no tiene, con lo que espera cada pieza: de ahí
+  // sale tanto que esté agotado como cuándo vuelve.
+  const components = items.map((item) => ({
+    stock: item.product.stock,
+    reserved: item.product.reserved,
+    quantity: item.quantity,
+    restocks: item.product.restocks,
+  }));
+  const today = isoDay(new Date());
+
   const itemsTotalUsd = sumItemsUsd(detail);
   return {
     ...kit,
+    restock: kitRestockWindow(missingComponents(components), today),
+    // La misma función que prueban los tests: aquí sí se pueden traer las
+    // piezas, porque la ficha las enseña de todos modos.
+    available: kitAvailableUnits(components),
     items: detail,
     installations,
     itemsTotalUsd,
