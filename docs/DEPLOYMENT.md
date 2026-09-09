@@ -80,12 +80,37 @@ La primera vez, siembra cada BD (zonas + admin) una sola vez:
 DATABASE_URL="<neon-...>" npm run db:seed
 ```
 
-> **Regla:** el `db:migrate` de prod se corre **junto con** el merge a `main`,
-> no después de días. Código y schema de prod deben ir sincronizados.
->
-> _Mejora futura:_ automatizar con un job de GitHub Actions disparado en `main`
-> que corra `db:migrate` usando un secreto `DATABASE_URL` del repo. Se añade
-> cuando el ritmo de cambios de schema lo justifique.
+### Producción ya no se migra a mano
+
+Lo hace [`.github/workflows/migrate.yml`](../.github/workflows/migrate.yml): se
+dispara al pushear a `main` **solo si cambió algo en `lib/db/migrations/`**, y se
+queda esperando aprobación antes de escribir.
+
+La regla anterior —"el `db:migrate` de prod se corre junto con el merge a `main`"—
+dependía de que alguien se acordara, y lo que se olvida es justo el paso que deja
+el código nuevo hablando con un schema viejo.
+
+Para que funcione hacen falta dos cosas, ambas en la UI de GitHub:
+
+| Qué | Dónde |
+| --- | --- |
+| Secret `PRODUCTION_DATABASE_URL` | Settings → Secrets and variables → Actions |
+| Environment `production` con *required reviewers* | Settings → Environments |
+
+Usa la connection string **directa** (sin pooling) de la rama `production` de
+Neon: el pooler va en modo transacción y algunas sentencias DDL se le atragantan.
+
+**Sin el environment el job no espera a nadie** y escribe en cuanto se mergea. Es
+la mitad del valor de esto, así que créalo aunque el reviewer seas tú.
+
+El comando manual sigue valiendo para dev, y para prod si el job estuviera caído:
+
+```bash
+DATABASE_URL="<neon-prod-directa>" npm run db:migrate
+```
+
+`drizzle-kit migrate` lleva su propio registro (`drizzle.__drizzle_migrations`) y
+solo aplica lo que falta, en orden: repetirlo no duplica nada.
 
 ## 6-bis. Vercel Blob (imágenes de productos y kits)
 
